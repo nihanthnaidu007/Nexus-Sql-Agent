@@ -1,0 +1,40 @@
+import os
+from datetime import datetime
+from db.fewshot_store import search_fewshots
+from utils.embeddings import embed_text
+from graph.state import SQLAgentState
+
+FEWSHOT_TOP_K = int(os.environ.get("FEWSHOT_RETRIEVAL_TOP_K", "3"))
+FEWSHOT_THRESHOLD = float(os.environ.get("FEWSHOT_SIMILARITY_THRESHOLD", "0.60"))
+
+
+def now():
+    return datetime.now().strftime("%H:%M:%S")
+
+
+async def retrieve_fewshot_node(state: SQLAgentState) -> SQLAgentState:
+    state["current_node"] = "retrieve_fewshot"
+    embedding = embed_text(state["user_query"])
+    examples = await search_fewshots(embedding, limit=FEWSHOT_TOP_K, threshold=FEWSHOT_THRESHOLD)
+
+    context_lines = []
+    for i, ex in enumerate(examples, 1):
+        context_lines.append(
+            f"EXAMPLE {i} (type: {ex['query_type']}, similarity: {ex['similarity']:.2f}):\n"
+            f"Question: {ex['natural_language']}\n"
+            f"SQL:\n{ex['sql_query']}"
+        )
+
+    state["similar_examples"] = examples
+    state["fewshot_context"] = (
+        "\n\n".join(context_lines)
+        if context_lines
+        else "No similar examples found — generate from schema alone."
+    )
+    state["completed_nodes"].append("retrieve_fewshot")
+    state["stream_updates"].append({
+        "timestamp": now(), "node": "retrieve_fewshot",
+        "message": f"Few-shot loaded: {len(examples)} examples (types: {[e['query_type'] for e in examples]})",
+        "status": "done",
+    })
+    return state
