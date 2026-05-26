@@ -1,0 +1,22 @@
+{
+  "paraphrase_hits": 4,
+  "paraphrase_total": 5,
+  "paraphrase_hit_rate": 0.8,
+  "unrelated_misses": 0,
+  "unrelated_total": 5,
+  "unrelated_miss_rate": 0.0,
+  "cache_miss_latencies": {
+    "p50": 8142,
+    "p95": 9790,
+    "p99": 9951,
+    "samples": 5,
+    "cache_hits_observed": 0,
+    "timeouts": 0
+  },
+  "cache_hit_latencies": {
+    "p50": 1482,
+    "p95": 2559,
+    "p99": 2618,
+    "samples": 10
+  }
+}

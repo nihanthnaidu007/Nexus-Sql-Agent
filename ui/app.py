@@ -7,7 +7,6 @@ import html
 import json
 import struct
 import streamlit as st
-import streamlit.components.v1 as components
 import requests
 import uuid
 import sys
@@ -484,7 +483,7 @@ st.html(f"""
 """)
 
 # ── Particle background ─────────────────────────────────────────────────────
-components.html(PARTICLE_HTML, height=1)
+st.iframe(PARTICLE_HTML, height=1)
 
 # ── Session state ───────────────────────────────────────────────────────────
 if "session_id" not in st.session_state:
@@ -511,7 +510,7 @@ if "pending_approval" not in st.session_state:
     st.session_state.pending_approval = None
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def get_health():
     try:
         r = requests.get(f"{API_BASE}/api/health", timeout=3)
@@ -527,7 +526,7 @@ def get_stats():
         fewshot_r = requests.get(f"{API_BASE}/api/fewshot-stats", timeout=3)
         return cache_r.json(), fewshot_r.json()
     except Exception:
-        return {"entries": 0, "hits": 0, "hit_rate": 0}, {"total": 0, "seeded": 0, "auto_learned": 0}
+        return {"entries": 0, "total_hits": 0, "hit_rate": 0}, {"total": 0, "seeded": 0, "auto_learned": 0}
 
 
 def run_query_streaming(user_query: str, session_id: str):
@@ -568,7 +567,7 @@ def run_query_streaming(user_query: str, session_id: str):
 
     except requests.exceptions.ConnectionError:
         yield {
-            "error": "Cannot connect to API server. Is FastAPI running on port 8000?",
+            "error": f"Cannot connect to API server at {API_BASE}. Is FastAPI running?",
             "is_complete": True
         }
     except Exception as e:
@@ -935,8 +934,9 @@ if st.session_state.result:
                 label_visibility="collapsed"
             )
 
-    # ── View toggle ────────────────────────────────────────────────────────
-    if rows:
+    # ── View toggle (include empty successful results so headers / chart panel still render)
+    show_results_panel = bool(rows) or (exec_result.get("success") and bool(columns))
+    if show_results_panel:
         col_t, col_c, _ = st.columns([1, 1, 6])
         with col_t:
             if st.button("◫ TABLE", use_container_width=True):
@@ -952,11 +952,22 @@ if st.session_state.result:
                                    value=1, step=1) if row_count > page_size else 1
             page_rows = rows[(page-1)*page_size : page*page_size]
 
-            th_html = "".join(f"<th>{html.escape(str(c))}</th>" for c in (columns or (list(page_rows[0].keys()) if page_rows else [])))
-            td_rows = "".join(
-                "<tr>" + "".join(f"<td>{html.escape(str(v)[:100])}</td>" for v in row.values()) + "</tr>"
-                for row in page_rows
-            )
+            colnames = columns or (list(page_rows[0].keys()) if page_rows else [])
+            th_html = "".join(f"<th>{html.escape(str(c))}</th>" for c in colnames)
+            if page_rows:
+                td_rows = "".join(
+                    "<tr>" + "".join(f"<td>{html.escape(str(v)[:100])}</td>" for v in row.values()) + "</tr>"
+                    for row in page_rows
+                )
+            else:
+                span = max(1, len(colnames))
+                td_rows = (
+                    f'<tr><td colspan="{span}" style="text-align:center;padding:20px;'
+                    f'color:var(--text-muted);font-family:Outfit,sans-serif;">'
+                    "No rows returned — if you expect demo data, run "
+                    "<code style='color:var(--accent);'>python scripts/migrate_chinook.py</code>"
+                    " (loads Chinook from GitHub into this database).</td></tr>"
+                )
             st.markdown(f"""
             <div class="result-table-wrap">
                 <table class="result-table">
@@ -993,11 +1004,11 @@ if st.session_state.result:
                     unsafe_allow_html=True
                 )
 
-    # ── No-rows message (shown when query ran but returned 0 results) ─────
+    # ── No-rows note (table above may already show the migrate hint) ───────
     if not rows and not r.get("error") and sql and exec_result.get("success"):
         st.info(
-            "◈ Query executed successfully but returned no results. "
-            "Try rephrasing or adding fewer filters."
+            "◈ Query ran successfully with zero rows. If you expected demo numbers, load the "
+            "Chinook sample into this database (see README: `python scripts/migrate_chinook.py`)."
         )
 
     # ── Insight card ──────────────────────────────────────────────────────
@@ -1073,7 +1084,7 @@ elif _trace_id:
 else:
     trace_html = '<span style="color:#2d4a61;font-style:italic">◈ Set LANGCHAIN_TRACING_V2=true for traces</span>'
 
-components.html(f"""
+st.iframe(f"""
 <style>
   .intel-strip {{
     margin-top: 24px; padding: 14px 20px;
@@ -1085,7 +1096,7 @@ components.html(f"""
 </style>
 <div class="intel-strip">
     <span>Cache: <span class="val">{cache_stats_data.get('entries',0)}</span> entries
-    &nbsp;·&nbsp; <span class="val">{cache_stats_data.get('hits',0)}</span> hits
+    &nbsp;·&nbsp; <span class="val">{cache_stats_data.get('total_hits',0)}</span> hits
     &nbsp;·&nbsp; <span class="val">{cache_stats_data.get('hit_rate',0)}%</span> hit rate</span>
 
     <span>Few-shots: <span class="val">{fewshot_stats_data.get('seeded',0)}</span> seeded

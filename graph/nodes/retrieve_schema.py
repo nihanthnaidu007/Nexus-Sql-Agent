@@ -13,7 +13,7 @@ def now():
 
 async def retrieve_schema_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "retrieve_schema"
-    embedding = embed_text(state["user_query"])
+    embedding = await embed_text(state["user_query"])
     schemas = await search_schemas(embedding, limit=SCHEMA_TOP_K)
 
     context_lines = []

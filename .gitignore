@@ -65,4 +65,3 @@ pyvenv.cfg
 
 # macOS
 .DS_Store
-scripts/chinook_postgres.sql

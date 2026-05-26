@@ -91,7 +91,6 @@ class SQLAgentState(TypedDict):
     similar_examples: list
     fewshot_context: str
     generated_sql: str
-    sql_history: list
     validation_result: Optional[dict]
     execution_result: Optional[dict]
     result_quality: Optional[dict]

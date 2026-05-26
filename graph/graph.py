@@ -1,7 +1,9 @@
 import os
 from dotenv import load_dotenv
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from graph.state import SQLAgentState
 
 load_dotenv()
@@ -19,19 +21,76 @@ from graph.nodes.check_result import check_result_node
 from graph.nodes.self_correct import self_correct_node
 from graph.nodes.classify_chart import classify_chart_node
 from graph.nodes.explain_result import explain_result_node
-from safety.guardrails import safety_check_node
+from safety.approval_gate import safety_check_node
 
-# Module-level singletons — created once so the same MemorySaver instance is
-# used for both the initial invoke and any resume invoke (required for
-# interrupt/resume to work across calls).
-_memory = MemorySaver()
+# LangGraph's AsyncPostgresSaver uses psycopg3 (not asyncpg) and requires
+# the DATABASE_URL in plain `postgresql://` form. Strip any SQLAlchemy driver
+# suffix so it works regardless of how DATABASE_URL was configured.
+_pg_url = (
+    os.environ.get("DATABASE_URL", "")
+    .replace("postgresql+asyncpg://", "postgresql://")
+    .replace("postgresql+psycopg2://", "postgresql://")
+    .replace("postgres://", "postgresql://", 1)
+)
+
+# These three module-level singletons are created lazily inside the running
+# event loop (FastAPI lifespan startup). AsyncPostgresSaver.__init__ calls
+# asyncio.get_running_loop(), so it cannot be constructed at module-load time.
+#
+# The same AsyncPostgresSaver instance must be reused by both the initial
+# invoke and any resume invoke (required for interrupt/resume to work across
+# calls and across multiple API processes hitting the same Postgres).
+_pool: AsyncConnectionPool | None = None
+_checkpointer: AsyncPostgresSaver | None = None
 _graph = None
+
+
+async def init_checkpointer() -> None:
+    """Open the checkpoint pool, instantiate the saver inside the running
+    event loop, and create the `checkpoints` / `checkpoint_writes` /
+    `checkpoint_blobs` tables if they don't exist. Idempotent.
+
+    Must be called once during FastAPI lifespan startup BEFORE the graph is
+    first invoked or built.
+    """
+    global _pool, _checkpointer
+    if _checkpointer is not None:
+        return
+    _pool = AsyncConnectionPool(
+        _pg_url,
+        min_size=1,
+        max_size=5,
+        open=False,
+        kwargs={
+            "autocommit": True,
+            "prepare_threshold": 0,
+            "row_factory": dict_row,
+        },
+    )
+    await _pool.open()
+    _checkpointer = AsyncPostgresSaver(_pool)
+    await _checkpointer.setup()
+
+
+async def aclose_checkpointer() -> None:
+    """Close the checkpoint connection pool. Called from FastAPI lifespan shutdown."""
+    global _pool, _checkpointer, _graph
+    if _pool is not None:
+        await _pool.close()
+    _pool = None
+    _checkpointer = None
+    _graph = None
 
 
 def build_graph():
     global _graph
     if _graph is not None:
         return _graph
+    if _checkpointer is None:
+        raise RuntimeError(
+            "Checkpointer not initialized. Call `await init_checkpointer()` "
+            "during FastAPI lifespan startup before building the graph."
+        )
 
     workflow = StateGraph(SQLAgentState)
 
@@ -90,11 +149,5 @@ def build_graph():
     workflow.add_edge("classify_chart", "explain_result")
     workflow.add_edge("explain_result", END)
 
-    _graph = workflow.compile(checkpointer=_memory, interrupt_before=["safety_check"])
+    _graph = workflow.compile(checkpointer=_checkpointer, interrupt_before=["safety_check"])
     return _graph
-
-
-async def run_graph(initial_state: dict, config: dict) -> dict:
-    """Run graph to completion or interrupt point."""
-    g = build_graph()
-    return await g.ainvoke(initial_state, config)

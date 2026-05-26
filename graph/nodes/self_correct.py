@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
 from graph.state import SQLAgentState
+from utils.retry import llm_retry
 
 load_dotenv()
 
@@ -74,7 +75,11 @@ async def self_correct_node(state: SQLAgentState) -> SQLAgentState:
         correction_history="\n".join(history_lines),
     )
 
-    response = await llm.ainvoke(prompt)
+    @llm_retry
+    async def _call_llm(prompt_text: str):
+        return await llm.ainvoke(prompt_text)
+
+    response = await _call_llm(prompt)
     raw = response.content.strip()
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
@@ -92,7 +97,6 @@ async def self_correct_node(state: SQLAgentState) -> SQLAgentState:
     })
 
     state["generated_sql"] = result["corrected_sql"]
-    state["sql_history"].append(result["corrected_sql"])
     state["completed_nodes"].append("self_correct")
     state["stream_updates"].append({
         "timestamp": now(), "node": "self_correct",

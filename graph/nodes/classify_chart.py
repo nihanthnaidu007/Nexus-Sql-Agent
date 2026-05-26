@@ -1,4 +1,5 @@
 import json
+import os
 import pandas as pd
 from datetime import datetime
 from graph.state import SQLAgentState
@@ -55,7 +56,20 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
         rows = result.get("rows", [])
         columns = result.get("columns", [])
 
-    if not rows or len(rows) < 2 or not HAS_PLOTLY:
+    if not rows:
+        reason = "No rows to visualize" if not columns else "No rows returned — chart needs at least one row"
+        state["chart_config"] = {
+            "chart_type": "none", "title": "", "x_column": None, "y_column": None,
+            "color_column": None, "reasoning": reason, "plotly_json": None,
+        }
+        state["completed_nodes"].append("classify_chart")
+        state["stream_updates"].append({
+            "timestamp": now(), "node": "classify_chart",
+            "message": f"No chart — {reason}", "status": "done",
+        })
+        return state
+
+    if len(rows) < 2 or not HAS_PLOTLY:
         state["chart_config"] = {
             "chart_type": "none", "title": "", "x_column": None, "y_column": None,
             "color_column": None, "reasoning": "Insufficient data for chart", "plotly_json": None,
@@ -106,7 +120,31 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
     elif categorical_cols and numeric_cols:
         row_count = len(rows)
         unique_cat = df[categorical_cols[0]].nunique()
-        chart_type = "pie" if unique_cat <= 8 and row_count <= 10 else "bar"
+
+        # A result is "rank-like" if the numeric column is sorted descending
+        # (i.e. it came from an ORDER BY ... DESC query — typical for TOP N queries)
+        is_ranked = (
+            len(numeric_cols) > 0
+            and df[numeric_cols[0]].is_monotonic_decreasing
+        )
+
+        # A result is "distribution-like" (pie-appropriate) only if:
+        # - It is NOT a ranked list
+        # - It has few enough categories to be readable as slices
+        # - All values are positive (negatives make no sense in a pie)
+        # - Row count is small enough to be readable
+        PIE_MAX_SLICES = int(os.environ.get("PIE_MAX_SLICES", "6"))
+
+        is_distribution = (
+            not is_ranked
+            and len(categorical_cols) > 0
+            and len(numeric_cols) > 0
+            and unique_cat <= PIE_MAX_SLICES
+            and row_count <= PIE_MAX_SLICES
+            and df[numeric_cols[0]].min() >= 0
+        )
+
+        chart_type = "pie" if is_distribution else "bar"
         x_col = categorical_cols[0]
         y_col = numeric_cols[0]
         reasoning = f"{chart_type.capitalize()}: {x_col} × {y_col} ({row_count} rows)"

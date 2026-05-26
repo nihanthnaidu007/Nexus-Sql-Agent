@@ -14,7 +14,7 @@ def now():
 
 async def retrieve_fewshot_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "retrieve_fewshot"
-    embedding = embed_text(state["user_query"])
+    embedding = await embed_text(state["user_query"])
     examples = await search_fewshots(embedding, limit=FEWSHOT_TOP_K, threshold=FEWSHOT_THRESHOLD)
 
     context_lines = []

@@ -89,6 +89,54 @@ async def store_cache_entry(
         })
 
 
+async def evict_stale_cache_entries(
+    max_age_days: int = 30,
+    max_entries: int = 10_000,
+) -> dict:
+    """Remove cache entries via TTL + LRU.
+
+    1. TTL eviction: rows whose `last_accessed` is older than `max_age_days`.
+    2. LRU eviction: if the remaining count still exceeds `max_entries`, drop
+       the oldest-accessed rows until the cap is met.
+
+    Returns: {"ttl_evicted": N, "lru_evicted": N}
+    """
+    ttl_evicted = 0
+    lru_evicted = 0
+
+    async with engine.begin() as conn:
+        ttl_result = await conn.execute(
+            text("""
+                DELETE FROM query_cache
+                WHERE last_accessed < NOW() - (INTERVAL '1 day' * :days)
+            """),
+            {"days": max_age_days},
+        )
+        ttl_evicted = ttl_result.rowcount or 0
+
+        count_result = await conn.execute(
+            text("SELECT COUNT(*) FROM query_cache")
+        )
+        current_count = count_result.scalar() or 0
+
+        if current_count > max_entries:
+            excess = current_count - max_entries
+            lru_result = await conn.execute(
+                text("""
+                    DELETE FROM query_cache
+                    WHERE id IN (
+                        SELECT id FROM query_cache
+                        ORDER BY last_accessed ASC
+                        LIMIT :excess
+                    )
+                """),
+                {"excess": excess},
+            )
+            lru_evicted = lru_result.rowcount or 0
+
+    return {"ttl_evicted": ttl_evicted, "lru_evicted": lru_evicted}
+
+
 async def get_cache_stats() -> dict:
     async with engine.connect() as conn:
         row = await conn.execute(text("""

@@ -8,6 +8,7 @@ from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 from typing import Optional
 from graph.state import SQLAgentState
+from utils.retry import llm_retry
 
 llm = ChatAnthropic(
     model="claude-haiku-4-5",
@@ -52,7 +53,12 @@ def now():
 async def parse_intent_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "parse_intent"
     structured_llm = llm.with_structured_output(IntentResult)
-    result = await structured_llm.ainvoke(PARSE_PROMPT.format(user_query=state["user_query"]))
+
+    @llm_retry
+    async def _call_llm(prompt: str):
+        return await structured_llm.ainvoke(prompt)
+
+    result = await _call_llm(PARSE_PROMPT.format(user_query=state["user_query"]))
 
     state["intent_class"] = result.intent_class
     state["extracted_entities"] = result.extracted_entities

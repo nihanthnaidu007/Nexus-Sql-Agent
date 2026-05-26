@@ -15,10 +15,15 @@ async def check_result_node(state: SQLAgentState) -> SQLAgentState:
     if not result["success"]:
         quality = {"status": "ERROR", "reasoning": result["error"], "is_acceptable": False}
     elif result["row_count"] == 0:
+        # Successful execution with no rows: still route to classify_chart / UI table
+        # (self_correct rarely fixes true empty datasets and burned correction budget).
         quality = {
             "status": "EMPTY",
-            "reasoning": "Zero rows returned. Likely causes: overly restrictive WHERE, wrong JOIN condition, or data doesn't exist.",
-            "is_acceptable": False,
+            "reasoning": (
+                "Zero rows returned. The SQL ran successfully — causes may include restrictive "
+                "filters, joins that eliminate rows, or empty tables (e.g. demo data not loaded)."
+            ),
+            "is_acceptable": True,
         }
     elif result["row_count"] >= ROW_FETCH_LIMIT:
         quality = {

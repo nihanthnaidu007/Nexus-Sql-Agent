@@ -13,7 +13,7 @@ def now():
 
 async def check_cache_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "check_cache"
-    embedding = embed_text(state["user_query"])
+    embedding = await embed_text(state["user_query"])
     result = await search_cache(embedding, threshold=CACHE_HIT_THRESHOLD)
 
     if result:

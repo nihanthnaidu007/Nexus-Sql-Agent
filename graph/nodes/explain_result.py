@@ -1,4 +1,5 @@
 import json
+import logging
 from dotenv import load_dotenv
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
@@ -9,7 +10,10 @@ from db.fewshot_store import store_fewshot_example
 from db.query_cache import store_cache_entry
 from utils.embeddings import embed_text
 from utils.confidence import compute_confidence_score
+from utils.retry import llm_retry
 from graph.state import SQLAgentState
+
+logger = logging.getLogger(__name__)
 
 EXPLAIN_PROMPT = """You are explaining a SQL query result to a business user. Be direct and specific.
 
@@ -64,7 +68,11 @@ async def explain_result_node(state: SQLAgentState) -> SQLAgentState:
 
     result_summary = f"Total: {row_count} rows. First 5: {json.dumps(rows[:5], default=str)}"
 
-    response = await llm.ainvoke(EXPLAIN_PROMPT.format(
+    @llm_retry
+    async def _call_llm(prompt: str):
+        return await llm.ainvoke(prompt)
+
+    response = await _call_llm(EXPLAIN_PROMPT.format(
         user_query=state["user_query"],
         sql=state["generated_sql"],
         result_summary=result_summary,
@@ -84,18 +92,24 @@ async def explain_result_node(state: SQLAgentState) -> SQLAgentState:
 
     if state["correction_attempts"] == 0 and quality.get("status") == "GOOD":
         try:
-            await store_fewshot_example(
+            stored = await store_fewshot_example(
                 natural_language=state["user_query"],
                 sql_query=state["generated_sql"],
                 tables_used=state.get("tables_identified", []),
                 auto_learned=True,
             )
-        except Exception:
-            pass
+            if not stored:
+                logger.debug("Few-shot skipped (near-duplicate detected)")
+        except Exception as e:
+            logger.warning(
+                "Non-critical write failed in explain_result "
+                "(session=%s): %s: %s",
+                state.get("session_id", "unknown")[:8], type(e).__name__, e,
+            )
 
     if quality.get("status") == "GOOD" and result:
         try:
-            embedding = embed_text(state["user_query"])
+            embedding = await embed_text(state["user_query"])
             await store_cache_entry(
                 user_query=state["user_query"],
                 query_embedding=embedding,
@@ -106,8 +120,12 @@ async def explain_result_node(state: SQLAgentState) -> SQLAgentState:
                 chart_type=state.get("chart_config", {}).get("chart_type"),
                 explanation=state["explanation"],
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(
+                "Non-critical write failed in explain_result "
+                "(session=%s): %s: %s",
+                state.get("session_id", "unknown")[:8], type(e).__name__, e,
+            )
 
     state["is_complete"] = True
     state["completed_nodes"].append("explain_result")

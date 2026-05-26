@@ -1,14 +1,31 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import logging
 import os
+import time
 from langchain_core.runnables.config import RunnableConfig
 
 TRACING_ENABLED = os.environ.get("LANGCHAIN_TRACING_V2", "false").lower() == "true"
 LANGSMITH_PROJECT = os.environ.get("LANGCHAIN_PROJECT", "nexus-sql")
 
-# Cached at module level to avoid repeated API calls per request
-_project_id_cache: str | None = None
+logger = logging.getLogger(__name__)
+
+# Module-level singleton so we don't reconstruct the client on every call.
+_langsmith_client = None
+
+
+def get_langsmith_client():
+    """Return a cached LangSmith Client instance, or None if not available."""
+    global _langsmith_client
+    if _langsmith_client is not None:
+        return _langsmith_client
+    try:
+        from langsmith import Client
+        _langsmith_client = Client()
+        return _langsmith_client
+    except Exception:
+        return None
 
 
 def get_run_config(
@@ -47,33 +64,40 @@ def get_run_config(
     )
 
 
-async def get_trace_url(run_id: str) -> str | None:
+def get_trace_url(run_id: str) -> str | None:
     """
-    Given a LangSmith run ID, returns the shareable trace URL.
-    Constructs the URL locally using project metadata — does not wait
-    for the run to finish uploading. ?poll=true lets LangSmith poll
-    if the run isn't visible yet.
-    Returns None if tracing is disabled or client init fails.
+    Return a LangSmith trace URL for the given run_id using the public API.
+
+    Uses `client.read_run()` (public method) to fetch the Run object, then
+    `client.get_run_url()` (public method) to construct the URL. Both are
+    part of the documented LangSmith SDK surface. No private methods are used.
+
+    The run may not be fully uploaded yet (propagation delay of a few seconds),
+    so we retry up to 3 times with 1-second sleeps before giving up.
+
+    Returns None if tracing is disabled or the URL cannot be retrieved.
     """
     if not TRACING_ENABLED:
         return None
-    try:
-        global _project_id_cache
-        from langsmith import Client
-        client = Client()
 
-        if _project_id_cache is None:
-            project = client.read_project(project_name=LANGSMITH_PROJECT)
-            _project_id_cache = str(project.id)
-
-        host_url = client._host_url
-        tenant_id = client._get_tenant_id()
-        return (
-            f"{host_url}/o/{tenant_id}/projects/p/"
-            f"{_project_id_cache}/r/{run_id}?poll=true"
-        )
-    except Exception:
+    client = get_langsmith_client()
+    if client is None:
         return None
+
+    for attempt in range(3):
+        try:
+            run = client.read_run(run_id)
+            if run:
+                return client.get_run_url(run=run)
+        except Exception as exc:
+            if attempt < 2:
+                time.sleep(1)
+            else:
+                logger.debug(
+                    f"Could not retrieve LangSmith trace URL for run {run_id}: {exc}"
+                )
+
+    return None
 
 
 def is_tracing_enabled() -> bool:

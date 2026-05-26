@@ -1,26 +1,111 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import os
 import uuid
 import asyncio
 import json
-from fastapi import FastAPI
+import logging
+import time
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from langgraph.types import Command
-from graph.graph import build_graph
+from graph.graph import build_graph, init_checkpointer, aclose_checkpointer
 from graph.state import SQLAgentState
 from db.connection import check_db_connection
-from db.query_cache import get_cache_stats
+from db.query_cache import get_cache_stats, evict_stale_cache_entries
 from db.fewshot_store import get_fewshot_stats
 from utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
+from utils.sql_safety import is_read_only_sql
+from utils.logging_config import log_query_start, log_query_complete, log_node_event
 
-app = FastAPI(title="NEXUS SQL API", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+logger = logging.getLogger("nexus_sql.api")
 
-graph = build_graph()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Ensure pgvector + agent tables exist before serving (idempotent).
+
+    Also opens the LangGraph PostgreSQL checkpoint pool, creates the
+    `checkpoints` / `checkpoint_writes` / `checkpoint_blobs` tables on first
+    run, and evicts stale `query_cache` entries.
+    """
+    from db.schema_init import init_database
+
+    try:
+        await asyncio.to_thread(init_database)
+    except Exception:
+        logger.exception("Database initialization failed; cache/few-shot endpoints may error until init succeeds")
+
+    try:
+        await init_checkpointer()
+        build_graph()
+        logger.info("LangGraph PostgreSQL checkpointer initialized and graph compiled.")
+    except Exception:
+        logger.exception("Checkpointer initialization failed; WRITE approval interrupt/resume will not work")
+
+    try:
+        eviction_stats = await evict_stale_cache_entries(
+            max_age_days=int(os.environ.get("CACHE_MAX_AGE_DAYS", "30")),
+            max_entries=int(os.environ.get("CACHE_MAX_ENTRIES", "10000")),
+        )
+        logger.info(f"Cache eviction on startup: {eviction_stats}")
+    except Exception:
+        logger.exception("Cache eviction on startup failed; continuing anyway")
+
+    yield
+
+    try:
+        await aclose_checkpointer()
+    except Exception:
+        logger.exception("Failed to close checkpointer connection pool")
+
+
+app = FastAPI(title="NEXUS SQL API", version="1.0.0", lifespan=lifespan)
+
+_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8501,http://localhost:3000")
+ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch any uncaught exception from a non-streaming endpoint, log the
+    full traceback server-side, and return a structured JSON error with a
+    short trace_id the user can quote when reporting the failure.
+
+    Note: this handler does NOT intercept errors that originate inside an
+    in-flight SSE stream — by that point the response has already begun
+    streaming, so Starlette routes the error through the EventSourceResponse
+    generator. /api/stream already catches its own exceptions and yields a
+    structured `{"event": "error", ...}` SSE event.
+    """
+    trace_id = str(uuid.uuid4())[:8]
+    logger.error(
+        f"[{trace_id}] Unhandled exception on {request.method} {request.url.path}: "
+        f"{type(exc).__name__}: {exc}",
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "An unexpected error occurred.",
+            "trace_id": trace_id,
+            "type": type(exc).__name__,
+        },
+    )
 
 
 class RunRequest(BaseModel):
@@ -44,7 +129,7 @@ class ApproveWriteRequest(BaseModel):
 
 
 def get_thread_config(session_id: str, base_config: dict | None = None) -> dict:
-    """Merge a LangGraph thread_id into the run config so MemorySaver can find the checkpoint."""
+    """Merge a LangGraph thread_id into the run config so the AsyncPostgresSaver checkpointer can find the checkpoint."""
     cfg = dict(base_config) if base_config else {}
     cfg["configurable"] = {**(cfg.get("configurable") or {}), "thread_id": session_id}
     return cfg
@@ -61,7 +146,7 @@ async def run_agent(req: RunRequest):
         cache_result=None, served_from_cache=False,
         relevant_schemas=[], schema_context="", tables_identified=[],
         similar_examples=[], fewshot_context="",
-        generated_sql="", sql_history=[],
+        generated_sql="",
         validation_result=None, execution_result=None, result_quality=None,
         correction_attempts=0, correction_history=[],
         chart_config=None, explanation="", confidence_score=0.0,
@@ -73,7 +158,21 @@ async def run_agent(req: RunRequest):
         user_query=req.user_query,
         run_name="nexus-sql-query"
     ))
-    final_state = await graph.ainvoke(initial_state, config=config)
+    start = log_query_start(logger, session_id, req.user_query)
+    final_state = await build_graph().ainvoke(initial_state, config=config)
+    log_query_complete(
+        logger,
+        session_id=session_id,
+        user_query=req.user_query,
+        intent_class=final_state.get("intent_class", "unknown"),
+        cache_hit=final_state.get("served_from_cache", False),
+        corrections_used=final_state.get("correction_attempts", 0),
+        result_quality=(final_state.get("result_quality") or {}).get("status", "unknown"),
+        row_count=(final_state.get("execution_result") or {}).get("row_count", 0),
+        chart_type=(final_state.get("chart_config") or {}).get("chart_type"),
+        duration_ms=(time.monotonic() - start) * 1000,
+        error=final_state.get("error"),
+    )
     return final_state
 
 
@@ -102,7 +201,6 @@ async def stream_agent(req: StreamRequest):
         "similar_examples": [],
         "fewshot_context": "",
         "generated_sql": "",
-        "sql_history": [],
         "validation_result": None,
         "execution_result": None,
         "result_quality": None,
@@ -126,8 +224,10 @@ async def stream_agent(req: StreamRequest):
         run_name="nexus-sql-stream"
     ))
 
+    stream_start = log_query_start(logger, session_id, req.user_query)
+
     async def event_generator():
-        g = graph
+        g = build_graph()
         last_update_count = 0
         root_run_id = None   # run_id of the root chain (set on first on_chain_start)
 
@@ -172,6 +272,7 @@ async def stream_agent(req: StreamRequest):
                         "is_complete": False
                     }
 
+                    log_node_event(logger, session_id, name, "complete")
                     yield {"event": "node_complete", "data": json.dumps(partial)}
                     await asyncio.sleep(0)
 
@@ -200,10 +301,14 @@ async def stream_agent(req: StreamRequest):
                         yield {"event": "interrupted", "data": json.dumps(interrupted)}
                         return
 
-                    # Build trace URL from root run ID
+                    # Build trace URL from root run ID.
+                    # get_trace_url is sync (uses time.sleep for retries);
+                    # run it in a thread so we don't block the event loop.
                     trace_url = None
                     if root_run_id and is_tracing_enabled():
-                        trace_url = await get_trace_url(str(root_run_id))
+                        trace_url = await asyncio.to_thread(
+                            get_trace_url, str(root_run_id)
+                        )
 
                     final = {
                         "node": "complete",
@@ -231,6 +336,19 @@ async def stream_agent(req: StreamRequest):
                         "session_id": session_id
                     }
 
+                    log_query_complete(
+                        logger,
+                        session_id=session_id,
+                        user_query=req.user_query,
+                        intent_class=output.get("intent_class", "unknown") or "unknown",
+                        cache_hit=output.get("served_from_cache", False),
+                        corrections_used=output.get("correction_attempts", 0),
+                        result_quality=(output.get("result_quality") or {}).get("status", "unknown"),
+                        row_count=(output.get("execution_result") or {}).get("row_count", 0),
+                        chart_type=(output.get("chart_config") or {}).get("chart_type"),
+                        duration_ms=(time.monotonic() - stream_start) * 1000,
+                        error=output.get("error"),
+                    )
                     yield {"event": "complete", "data": json.dumps(final, default=str)}
 
         except Exception as e:
@@ -241,7 +359,22 @@ async def stream_agent(req: StreamRequest):
 
 @app.post("/api/run-sql")
 async def run_edited_sql(req: RunSQLRequest):
-    """Skips generation — validates and executes user-provided SQL directly."""
+    """Skips generation — validates and executes user-provided SQL directly.
+
+    Server-side guard: only SELECT (and WITH ... SELECT) statements are
+    permitted. Any INSERT/UPDATE/DELETE/DROP/CREATE/ALTER/TRUNCATE/COMMAND
+    is rejected at the API boundary, regardless of caller (UI or curl).
+    """
+    is_safe, reason = is_read_only_sql(req.sql)
+    if not is_safe:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "Only SELECT statements are permitted.",
+                "detail": reason,
+            },
+        )
+
     from graph.nodes.validate_syntax import validate_syntax_node
     from graph.nodes.execute_query import execute_query_node
     from graph.nodes.check_result import check_result_node
@@ -249,7 +382,7 @@ async def run_edited_sql(req: RunSQLRequest):
 
     mini_state = SQLAgentState(
         user_query="[user-edited SQL]", session_id=req.session_id or str(uuid.uuid4()),
-        generated_sql=req.sql, sql_history=[req.sql], correction_attempts=0,
+        generated_sql=req.sql, correction_attempts=0,
         correction_history=[], completed_nodes=[], stream_updates=[],
         intent_class="READ", extracted_entities=[], requires_approval=False,
         write_operation_type=None, approval_granted=True,
@@ -262,45 +395,92 @@ async def run_edited_sql(req: RunSQLRequest):
         trace_id=None, trace_url=None, error=None
     )
     mini_state = await validate_syntax_node(mini_state)
-    if mini_state["validation_result"]["is_valid"]:
+
+    validation_result = mini_state.get("validation_result") or {}
+    is_valid = validation_result.get("is_valid", False)
+    # validate_syntax_node stores errors as a list under "errors"
+    errors = validation_result.get("errors") or []
+    error_message = errors[0] if errors else validation_result.get("error_message", "SQL validation failed.")
+
+    if is_valid:
         mini_state = await execute_query_node(mini_state)
         mini_state = await check_result_node(mini_state)
         mini_state = await classify_chart_node(mini_state)
+    else:
+        if not mini_state.get("error"):
+            mini_state["error"] = error_message
+
     return mini_state
+
+
+# Module-level LLM connectivity cache — avoids burning tokens on every probe.
+_llm_health_cache: dict = {"status": "unknown", "checked_at": 0.0}
+LLM_HEALTH_CACHE_TTL = int(os.environ.get("LLM_HEALTH_CACHE_TTL", "300"))  # 5 minutes
+
+
+async def _check_llm_connectivity() -> dict:
+    """Check LLM API connectivity via token-free metadata calls.
+
+    Results are cached for LLM_HEALTH_CACHE_TTL seconds so repeated
+    health probes (e.g. Streamlit's 30-second polling) do not burn tokens.
+
+    `anthropic.models.list()` and `openai.models.list()` are metadata-only
+    endpoints — they do not invoke a model and have zero token cost.
+    """
+    now = time.monotonic()
+    if now - _llm_health_cache["checked_at"] < LLM_HEALTH_CACHE_TTL:
+        return _llm_health_cache.copy()
+
+    anthropic_ok = False
+    openai_ok = False
+
+    try:
+        import anthropic as _anthropic
+        _anthropic.Anthropic().models.list(limit=1)
+        anthropic_ok = True
+    except Exception as e:
+        logger.warning(f"Anthropic health check failed: {type(e).__name__}: {e}")
+
+    try:
+        from openai import AsyncOpenAI as _OAI
+        await _OAI().models.list()
+        openai_ok = True
+    except Exception as e:
+        logger.warning(f"OpenAI health check failed: {type(e).__name__}: {e}")
+
+    _llm_health_cache.update({
+        "anthropic_connected": anthropic_ok,
+        "openai_connected": openai_ok,
+        "status": "ok" if (anthropic_ok and openai_ok) else "degraded",
+        "checked_at": now,
+    })
+    logger.info(
+        f"LLM connectivity checked: anthropic={anthropic_ok} openai={openai_ok}"
+    )
+    return _llm_health_cache.copy()
 
 
 @app.get("/api/health")
 async def health():
+    """Fast health check.
+
+    DB connectivity: checked on every call (a single `SELECT 1`, ~1ms).
+    LLM connectivity: checked at most once every LLM_HEALTH_CACHE_TTL seconds
+    using token-free metadata API calls. This prevents Streamlit's 30-second
+    polling from burning Anthropic/OpenAI quota.
+    """
     db_ok = await check_db_connection()
+    llm_health = await _check_llm_connectivity()
 
-    embedding_ok = False
-    try:
-        from utils.embeddings import embed_text
-        test = embed_text("health check")
-        embedding_ok = len(test) == 1536
-    except Exception:
-        embedding_ok = False
-
-    llm_ok = False
-    try:
-        import os
-        from langchain_anthropic import ChatAnthropic
-        llm = ChatAnthropic(
-            model="claude-haiku-4-5",
-            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-            max_tokens=10
-        )
-        resp = await llm.ainvoke("ping")
-        llm_ok = len(resp.content) > 0
-    except Exception:
-        llm_ok = False
+    overall = "ok" if (db_ok and llm_health["status"] == "ok") else "degraded"
 
     return {
-        "status": "ok" if (db_ok and embedding_ok) else "degraded",
+        "status": overall,
         "db_connected": db_ok,
-        "embedding_api": embedding_ok,
-        "llm_api": llm_ok,
+        "anthropic_connected": llm_health.get("anthropic_connected", False),
+        "openai_connected": llm_health.get("openai_connected", False),
         "langsmith_tracing": is_tracing_enabled(),
+        "llm_last_checked": llm_health.get("checked_at", 0),
         "nodes": [
             "parse_intent", "safety_check", "check_cache", "retrieve_schema", "retrieve_fewshot",
             "generate_sql", "validate_syntax", "execute_query", "check_result",
@@ -313,7 +493,7 @@ async def health():
 @app.post("/api/approve-write")
 async def approve_write(req: ApproveWriteRequest):
     """Resume an interrupted graph with the human's approval decision."""
-    g = graph
+    g = build_graph()
     config = get_thread_config(req.session_id)
     final_state = await g.ainvoke(
         Command(update={"approval_granted": req.approved}, resume=req.approved),
@@ -335,6 +515,21 @@ async def approve_write(req: ApproveWriteRequest):
 @app.get("/api/cache-stats")
 async def cache_stats():
     return await get_cache_stats()
+
+
+@app.post("/api/cache-evict")
+async def cache_evict(
+    max_age_days: int = 30,
+    max_entries: int = 10_000,
+):
+    """Manually trigger cache eviction. Intended for an admin or a scheduled
+    job. TTL drops rows not accessed in `max_age_days`; LRU then caps the
+    table size at `max_entries`."""
+    stats = await evict_stale_cache_entries(
+        max_age_days=max_age_days,
+        max_entries=max_entries,
+    )
+    return {"status": "ok", "evicted": stats}
 
 
 @app.get("/api/fewshot-stats")

@@ -2,6 +2,7 @@
 Seed 25 golden few-shot Q-SQL examples covering 5 query types.
 --skip-if-exists: if fewshot_examples count > 0, exit early.
 """
+import asyncio
 import sys
 import os
 
@@ -10,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-from utils.embeddings import embed_batch
+from utils.embeddings import embed_texts
 from db.connection import sync_engine as engine
 from sqlalchemy import text
 
@@ -352,7 +353,7 @@ def main():
 
     print(f"◈ Seeding {len(EXAMPLES)} few-shot examples...")
     texts = [ex["natural_language"] for ex in EXAMPLES]
-    embeddings = embed_batch(texts)
+    embeddings = asyncio.run(embed_texts(texts))
 
     vec_sql = text("""
         INSERT INTO fewshot_examples (natural_language, sql_query, tables_used, query_type, embedding, auto_learned)

@@ -27,10 +27,10 @@ This is not a prompt-wrapper demo. It covers the complete AI engineering pipelin
 - **Fully async execution** — every node, database call, and LLM invocation is `async/await` with asyncpg
 - **Server-Sent Events (SSE) streaming** — each node fires a real-time update visible in the UI before the full pipeline completes
 - **LangSmith tracing** — every graph invocation produces a shareable trace URL with per-node latency and token counts
-- **LangGraph interrupt() for WRITE approval** — stateful pause with MemorySaver checkpointing; resumes after human decision via `/api/approve-write`
+- **LangGraph `interrupt_before` for WRITE approval** — graph pauses before the `safety_check` node using `interrupt_before` at compile time; resumes after human decision via `/api/approve-write`
 - **Self-correcting SQL** — up to 3 correction attempts with Claude Sonnet diagnosing why the query failed and rewriting it
 - **Auto chart classification** — heuristic column type detection automatically selects pie, bar, line, or scatter charts using Plotly
-- **Edit SQL and re-run** — users can modify generated SQL in the UI and re-execute without re-running the full agent pipeline
+- **Edit SQL and re-run** — users can modify generated SQL in the UI and re-execute without re-running the full agent pipeline (see note on safety bypass below)
 
 ---
 
@@ -82,7 +82,7 @@ User Query
 | Node | Model | Purpose |
 |---|---|---|
 | `parse_intent` | Claude Haiku 4.5 | Classifies query as READ / WRITE / SCHEMA_QUESTION / AMBIGUOUS; extracts key entities |
-| `safety_check` | — | LangGraph `interrupt()` gate — blocks WRITE operations and waits for explicit human approval |
+| `safety_check` | — | Approval gate: paused by `interrupt_before` before this node executes. If `requires_approval=True`, the graph waits for `/api/approve-write` before continuing |
 | `check_cache` | OpenAI text-embedding-3-small | Embeds query and searches pgvector cache with cosine similarity (threshold: 0.92) |
 | `retrieve_schema` | OpenAI text-embedding-3-small | Semantic search over `schema_embeddings` table — retrieves top-K relevant table schemas |
 | `retrieve_fewshot` | OpenAI text-embedding-3-small | Semantic search over `fewshot_examples` table — retrieves similar past query-SQL pairs |
@@ -100,7 +100,7 @@ User Query
 
 | Component | Technology |
 |---|---|
-| Orchestration | LangGraph 0.2+ with `StateGraph` and `MemorySaver` |
+| Orchestration | LangGraph 0.2+ with `StateGraph` and `AsyncPostgresSaver` |
 | LLM (intent, explain) | Claude Haiku 4.5 (`claude-haiku-4-5`) |
 | LLM (generate, correct) | Claude Sonnet 4.5 (`claude-sonnet-4-5`) |
 | Embeddings | OpenAI `text-embedding-3-small` (1536-dim) |
@@ -147,7 +147,6 @@ TABLE: fewshot_examples
   tables_used         TEXT[]
   query_type          TEXT
   embedding           vector(1536)          -- HNSW cosine index
-  success_count       INTEGER
   auto_learned        BOOLEAN
 ```
 
@@ -180,11 +179,12 @@ nexus-sql-agent/
 │                                  # /api/fewshot-stats
 ├── db/
 │   ├── connection.py              # Async + sync SQLAlchemy engines; Neon SSL support
+│   ├── schema_init.py             # Idempotent DDL: vector tables + Chinook schema + migrations
 │   ├── schema_store.py            # pgvector schema embedding search
 │   ├── fewshot_store.py           # pgvector few-shot retrieval + auto-learning
 │   └── query_cache.py             # pgvector semantic cache + hit tracking
 ├── graph/
-│   ├── graph.py                   # LangGraph StateGraph builder; MemorySaver; interrupt_before
+│   ├── graph.py                   # LangGraph StateGraph builder; AsyncPostgresSaver; interrupt_before
 │   ├── state.py                   # SQLAgentState TypedDict + Pydantic result models
 │   └── nodes/
 │       ├── parse_intent.py        # Claude Haiku structured output: intent + entities
@@ -199,13 +199,14 @@ nexus-sql-agent/
 │       ├── classify_chart.py      # Column type detection + Plotly figure generation
 │       └── explain_result.py      # Claude Haiku insight + cache store + few-shot store
 ├── safety/
-│   └── guardrails.py              # safety_check_node — approves or blocks WRITE operations
+│   └── approval_gate.py           # safety_check_node + contains_write_operation regex
 ├── scripts/
 │   ├── init_db.py                 # Idempotent DB setup: pgvector extension + all tables
+│   ├── migrate_chinook.py         # Loads Chinook data from JSON source; --skip-if-exists / --force
 │   ├── seed_schema_embeddings.py  # Embeds and stores Chinook table descriptions
 │   ├── seed_fewshot_examples.py   # Seeds initial query-SQL training examples
-│   ├── chinook_postgres.sql       # Full Chinook schema + data (PostgreSQL dialect)
-│   └── entrypoint.sh              # Docker entrypoint: init → seed → start API → start UI
+│   ├── dev.sh                     # Local dev launcher: API + Streamlit
+│   └── entrypoint.sh              # Docker entrypoint: wait → init → seed → start API
 ├── ui/
 │   └── app.py                     # Streamlit UI: streaming handler, chart toggle,
 │                                  # SQL editor, WRITE approval modal, LangSmith links
@@ -213,9 +214,26 @@ nexus-sql-agent/
 │   ├── embeddings.py              # OpenAI embedding wrapper (text-embedding-3-small)
 │   ├── confidence.py              # Confidence score calculator from quality signals
 │   ├── sql_formatter.py           # SQL syntax highlighting for UI
+│   ├── sql_safety.py              # sqlglot AST parse + read-only SELECT enforcement
+│   ├── retry.py                   # @llm_retry decorator with tenacity backoff
+│   ├── logging_config.py          # Structured log helpers: log_query_start/complete/node_event
 │   └── langsmith_config.py        # RunnableConfig builder + shareable trace URL
-├── eval/                          # Evaluation harness (deepeval)
+├── eval/                          # Evaluation harness — runs against the live API
+│   ├── conftest.py                # Shared fixtures, http_client, metric recording, row overlap helpers
+│   ├── gold_queries.py            # 30-query gold set (filter/agg/join/multi/subquery/window)
+│   ├── test_sql_correctness.py    # SQL correctness vs gold-SQL result overlap (≥ 70% per query)
+│   ├── test_cache_accuracy.py     # Paraphrase hit-rate + unrelated miss-rate
+│   ├── test_self_correction.py    # Resilience: queries that force correction loops
+│   ├── test_safety.py             # WRITE detection, READ pass-through, SQL injection blocked
+│   ├── test_chart_classification.py # Heuristic chart-type accuracy (line/bar/pie/scatter/none)
+│   ├── test_latency.py            # End-to-end p50 / p95 / p99 for cache-miss and cache-hit paths
+│   ├── report.py                  # Reads pytest-json-report + sidecar metrics; writes BENCHMARK.md
+│   ├── run_benchmark.py           # CLI: --category {sql_correctness, cache_accuracy, ...}, --no-report
+│   └── metrics.py                 # Inventory of metrics implemented in this harness
 ├── images/                        # Screenshots
+├── BENCHMARK.md                   # Latest measured results (regenerated by run_benchmark.py)
+├── pytest.ini                     # pytest config: testpaths=eval, asyncio_mode=auto, timeout=300
+├── requirements-dev.txt           # Eval/dev-only deps (pytest, pytest-json-report, pytest-timeout, ...)
 ├── Dockerfile                     # Python 3.13-slim; installs requirements
 ├── docker-compose.yml             # db (pgvector/pg16) + api + ui services
 ├── requirements.txt               # All Python dependencies
@@ -254,12 +272,16 @@ docker-compose up --build
 #   UI:   http://localhost:8501
 ```
 
-The Docker entrypoint automatically:
-1. Creates the pgvector extension and all three vector tables
-2. Seeds schema embeddings for all 11 Chinook tables
-3. Seeds initial few-shot examples
-4. Starts FastAPI on port 8000
-5. Starts Streamlit on port 8501
+`scripts/entrypoint.sh` runs inside the `api` container and executes this sequence automatically:
+
+1. Waits for the database to accept connections (up to 30 retries × 2 s)
+2. Runs `init_db.py` — creates the pgvector extension, vector tables, and Chinook DDL
+3. Runs `seed_schema_embeddings.py --skip-if-exists` — embeds all 11 Chinook table schemas
+4. Runs `seed_fewshot_examples.py --skip-if-exists` — loads initial query-SQL training examples
+5. Runs `migrate_chinook.py --skip-if-exists` — loads Chinook sample data from JSON
+6. Starts the FastAPI server with `exec uvicorn api.main:app` on port 8000
+
+The Streamlit UI is started by a separate `ui` service defined in `docker-compose.yml` on port 8501. Both services start together with `docker-compose up`.
 
 ### Option B — Local Development
 
@@ -280,6 +302,16 @@ cp .env.example .env
 
 # 5. Initialize database and seed data
 python scripts/init_db.py
+
+# First time setup — loads Chinook sample data from JSON:
+python scripts/migrate_chinook.py
+
+# Skip if data already present (idempotent — safe to run repeatedly):
+# python scripts/migrate_chinook.py --skip-if-exists
+
+# Force re-seed (truncates and re-inserts all data):
+# python scripts/migrate_chinook.py --force
+
 python scripts/seed_schema_embeddings.py
 python scripts/seed_fewshot_examples.py
 
@@ -301,27 +333,59 @@ DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 
 ---
 
+## Production Deployment
+
+### Why not Vercel
+
+The FastAPI backend uses persistent asyncpg connection pools, LangGraph `AsyncPostgresSaver` checkpoints (requires a single persistent process for interrupt/resume to work across calls), and SSE streaming for real-time node updates — none of which are compatible with Vercel's serverless model. The Streamlit UI cannot run on Vercel at all.
+
+### Recommended Stack
+
+| Layer | Recommended Service |
+|---|---|
+| API server | Railway (always-on service, Dockerfile deploy) |
+| Streamlit UI | Railway (second service, `streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0`) |
+| PostgreSQL + pgvector | Supabase (managed pgvector with native HNSW, no cold starts on active projects) or Railway PostgreSQL |
+
+### Deployment Steps (Railway + Supabase)
+
+1. Create a Supabase project. In the SQL editor, run `CREATE EXTENSION IF NOT EXISTS vector;`
+2. Create a Railway project. Add two services from your GitHub repo: one for `api` (Dockerfile-based) and one for `ui`.
+3. Set all environment variables on both services (see Environment Variables section below).
+4. On the `ui` service, set `API_BASE_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:8000` to route UI→API traffic over Railway's private network.
+5. On the `api` service, set `ALLOWED_ORIGINS=https://<your-ui-service>.railway.app` to restrict CORS to your deployed UI.
+6. Deploy both services. The entrypoint runs all database initialization automatically on first boot.
+
+---
+
 ## Environment Variables
 
 Create a `.env` file from `.env.example` and fill in the following:
 
-```bash
-# ── Required ────────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY=sk-ant-...           # Claude Haiku (intent/explain) + Claude Sonnet (SQL/correct)
-OPENAI_API_KEY=sk-...                  # text-embedding-3-small (1536-dim embeddings)
-DATABASE_URL=postgresql://nexus:nexus@localhost:5432/nexus_sql
-
-# ── Optional — LangSmith Tracing ────────────────────────────────────────────
-LANGCHAIN_TRACING_V2=true              # Enable LangSmith tracing
-LANGCHAIN_API_KEY=ls__...             # LangSmith API key
-LANGCHAIN_PROJECT=nexus-sql            # Project name in LangSmith
-
-# ── Optional — Tuning ───────────────────────────────────────────────────────
-CACHE_SIMILARITY_THRESHOLD=0.92        # Cosine similarity threshold for cache hits (0.0–1.0)
-SCHEMA_RETRIEVAL_TOP_K=6               # Number of schema tables retrieved per query
-MAX_CORRECTION_ATTEMPTS=3              # Max self-correction attempts before routing to explain
-QUERY_EXECUTION_TIMEOUT_SECONDS=10     # Per-query timeout for asyncpg execution
-```
+| Variable | Default | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | *(required)* | Claude Haiku (intent/explain) + Claude Sonnet (SQL/correct) |
+| `OPENAI_API_KEY` | *(required)* | `text-embedding-3-small` — 1536-dim embeddings for schema, few-shot, cache |
+| `DATABASE_URL` | *(required)* | PostgreSQL connection string. Append `?sslmode=require` for managed databases |
+| `LANGCHAIN_TRACING_V2` | `false` | Enable LangSmith tracing |
+| `LANGCHAIN_API_KEY` | — | LangSmith API key |
+| `LANGCHAIN_PROJECT` | `nexus-sql` | Project name in LangSmith |
+| `LANGCHAIN_ENDPOINT` | `https://api.smith.langchain.com` | LangSmith API endpoint |
+| `SCHEMA_RETRIEVAL_TOP_K` | `6` | Number of schema tables retrieved per query |
+| `FEWSHOT_RETRIEVAL_TOP_K` | `3` | Number of few-shot examples retrieved per query |
+| `FEWSHOT_SIMILARITY_THRESHOLD` | `0.60` | Minimum cosine similarity for few-shot retrieval |
+| `CACHE_SIMILARITY_THRESHOLD` | `0.92` | Cosine similarity threshold for cache hits (0.0–1.0) |
+| `MAX_CORRECTION_ATTEMPTS` | `3` | Max self-correction attempts before routing to explain |
+| `QUERY_TIMEOUT_MS` | `30000` | Per-query timeout in **milliseconds** for asyncpg execution |
+| `PIE_MAX_SLICES` | `6` | Max slices before a pie chart falls back to bar |
+| `CACHE_MAX_AGE_DAYS` | `30` | Cache eviction: entries older than this are removed |
+| `CACHE_MAX_ENTRIES` | `10000` | Cache eviction: LRU cap on total cache table size |
+| `LOG_LEVEL` | `INFO` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `LLM_HEALTH_CACHE_TTL` | `300` | Seconds to cache LLM connectivity result in `/api/health` |
+| `ALLOWED_ORIGINS` | `http://localhost:8501,http://localhost:3000` | Comma-separated CORS allowed origins |
+| `API_BASE_URL` | `http://localhost:8000` | Base URL the Streamlit UI uses to reach the API |
+| `CHINOOK_JSON_URL` | GitHub lerocha/chinook-database | Override URL for Chinook JSON source |
+| `CHINOOK_SOURCE_URL` | — | Alternative: copy Chinook from another PostgreSQL database |
 
 ---
 
@@ -368,6 +432,8 @@ Request:  { "sql": "SELECT ...", "session_id": "..." }
 Response: { validation_result, execution_result, chart_config }
 ```
 
+**Note:** This endpoint bypasses the WRITE approval gate. This is intentional — you have already reviewed the generated SQL before editing it. As a server-side guard, `/api/run-sql` enforces SELECT-only access: any INSERT, UPDATE, DELETE, DROP, or DDL statement is rejected with HTTP 400 regardless of how the request is made.
+
 ### `GET /api/health`
 Health check for all subsystems.
 
@@ -375,8 +441,8 @@ Health check for all subsystems.
 {
   "status": "ok",
   "db_connected": true,
-  "embedding_api": true,
-  "llm_api": true,
+  "anthropic_connected": true,
+  "openai_connected": true,
   "langsmith_tracing": false,
   "nodes": ["parse_intent", "safety_check", "check_cache", "retrieve_schema",
             "retrieve_fewshot", "generate_sql", "validate_syntax", "execute_query",
@@ -405,7 +471,7 @@ Every successful query is embedded and stored in `query_cache`. On subsequent qu
 
 ### Human-in-the-Loop WRITE Approval
 
-When `parse_intent` classifies a query as WRITE (INSERT, UPDATE, DELETE, DROP), LangGraph pauses execution at `safety_check` using `interrupt_before`. The UI shows an approval modal with the operation type. Clicking APPROVE or DENY calls `/api/approve-write`, which uses `Command(update={...}, resume=...)` to resume or terminate the stateful checkpoint. The same `MemorySaver` instance handles both the initial interrupt and the resume, preserving full graph state across the pause.
+When `parse_intent` classifies a query as WRITE (INSERT, UPDATE, DELETE, DROP), the graph is compiled with `interrupt_before=["safety_check"]`. This pauses graph execution before `safety_check` runs. The UI shows an approval modal with the operation type. Clicking APPROVE or DENY calls `/api/approve-write`, which uses `Command(update={...}, resume=...)` to resume or terminate the stateful checkpoint. The `AsyncPostgresSaver` checkpointer persists the full graph state across the pause — surviving API restarts and multiple concurrent sessions.
 
 ### Self-Correcting SQL
 
@@ -418,14 +484,17 @@ When `execute_query` fails or `check_result` classifies the result as EMPTY or E
 - Columns where ≥ 80% of sampled values are numeric → numeric columns
 - Everything else → categorical columns
 
-Chart type selection logic:
+Chart type selection logic (rank-aware):
 
-| Column Combination | Chart Type |
-|---|---|
-| date + numeric | line |
-| categorical + numeric, ≤ 8 unique and ≤ 10 rows | pie |
-| categorical + numeric, otherwise | bar |
-| two numeric columns | scatter |
+| Column Combination | Conditions | Chart Type |
+|---|---|---|
+| date + numeric | — | line |
+| categorical + numeric | `is_ranked` (numeric column monotonic-decreasing — e.g. TOP-N) | bar |
+| categorical + numeric | `is_distribution`: not ranked, unique categories ≤ `PIE_MAX_SLICES`, row count ≤ `PIE_MAX_SLICES`, all values ≥ 0 | pie |
+| categorical + numeric | otherwise | bar |
+| two numeric columns | — | scatter |
+
+`PIE_MAX_SLICES` is environment-tunable (default `6`). The `is_ranked` check prevents top-N rankings from being mis-rendered as a distribution pie.
 
 The figure is serialized to a custom JSON format that avoids Plotly's binary typed-array encoding (orjson compatibility issue), then deserialized in the UI using a custom base64 decoder.
 
@@ -436,6 +505,10 @@ Every query that completes with zero corrections and a GOOD result quality is au
 ### LangSmith Tracing
 
 When `LANGCHAIN_TRACING_V2=true`, every graph invocation is traced in LangSmith with per-node latency, token counts, and structured metadata. The `explain_result` node surfaces a shareable trace URL in the insight card footer and in the bottom status bar. The URL uses `?poll=true` so it loads even before the run finishes uploading.
+
+### Edit SQL Safety Note
+
+The Edit SQL → Re-run path executes the edited SQL directly via `/api/run-sql` and bypasses the WRITE approval gate. This is intentional — you have already reviewed the SQL before editing it. The `/api/run-sql` endpoint enforces SELECT-only access by default, blocking any INSERT, UPDATE, DELETE, DROP, or DDL statements regardless of the edit.
 
 ---
 
@@ -548,6 +621,59 @@ Confidence is computed from: correction attempts used, result quality status (GO
 
 ---
 
+## Evaluation Harness
+
+The `eval/` directory contains a pytest-based benchmark that runs against the live API. The latest measured results are tracked in [BENCHMARK.md](BENCHMARK.md) at the repo root.
+
+### Categories covered
+
+| Category | File | What it measures |
+|---|---|---|
+| SQL correctness | `eval/test_sql_correctness.py` | Result-row overlap against a 30-query gold set (`eval/gold_queries.py`) |
+| Cache accuracy | `eval/test_cache_accuracy.py` | Paraphrase hit rate, unrelated-question miss rate |
+| Self-correction | `eval/test_self_correction.py` | Recovery on queries that intentionally force correction loops |
+| Safety | `eval/test_safety.py` | WRITE detection, READ pass-through, SQL injection blocked |
+| Chart classification | `eval/test_chart_classification.py` | Heuristic chart-type accuracy across line / bar / pie / scatter / none |
+| Latency | `eval/test_latency.py` | End-to-end p50 / p95 / p99 for cache-miss and cache-hit paths |
+
+### Running the benchmark
+
+The API server and database must be running first (see Setup & Usage).
+
+```bash
+# Install eval-only dependencies
+pip install -r requirements-dev.txt
+
+# Full benchmark — runs every category and writes BENCHMARK.md
+python eval/run_benchmark.py
+
+# Single category (one of:
+#   sql_correctness, cache_accuracy, self_correction,
+#   safety, chart_classification, latency, all)
+python eval/run_benchmark.py --category safety
+python eval/run_benchmark.py --category sql_correctness
+
+# Skip slow latency tests
+python eval/run_benchmark.py --no-latency
+
+# Run tests but skip writing BENCHMARK.md
+python eval/run_benchmark.py --no-report
+
+# Override the API base URL
+NEXUS_API_URL=http://localhost:8000 python eval/run_benchmark.py
+```
+
+Results are written to `eval/benchmark_results.json` (pass/fail per test) and `eval/benchmark_metrics.json` (latency percentiles, hit rates). `eval/report.py` merges both into `BENCHMARK.md`.
+
+### Non-negotiable bars
+
+The benchmark fails the suite (non-zero exit) unless both of these are met:
+
+- **SQL correctness rate ≥ 80 %** across the 30-query gold set
+- **SQL injection blocked = 5/5** (every attempted injection rejected with HTTP 400)
+
+---
+
 ## Verification Checks
 
 After any code change, run these checks to verify the system is intact:
@@ -617,7 +743,7 @@ curl http://localhost:8000/api/health
 | Cache threshold | 0.92 cosine similarity is conservative — minor query variations may miss the cache |
 | Self-correction | Limited to 3 attempts; complex multi-join queries with obscure failure modes may exhaust corrections |
 | Chart detection | Heuristic-based; does not use LLM reasoning — unusual column naming conventions may misclassify chart type |
-| WRITE sessions | Only one WRITE approval session active per `session_id` at a time; MemorySaver is in-memory and resets on restart |
+| WRITE sessions | Only one WRITE approval session active per `session_id` at a time; sessions are tied to the PostgreSQL checkpoint store |
 | Streaming | SSE connection held open during full pipeline execution; aggressive proxy timeouts may interrupt long queries |
 
 ---
@@ -627,8 +753,7 @@ curl http://localhost:8000/api/health
 - **Multi-database support** — parameterize schema seeding to work with any PostgreSQL schema, not just Chinook
 - **Agentic tool use** — replace the fixed node chain with a tool-calling agent that calls schema lookup and SQL execution dynamically
 - **RLHF feedback loop** — thumbs up/down on query results to score and filter auto-learned few-shot examples
-- **Redis session backend** — replace in-memory `MemorySaver` with Redis for multi-instance WRITE approval and persistent sessions
-- **Evaluation harness** — deepeval integration in `eval/` for automated accuracy and SQL correctness benchmarking
+- **Redis session backend** — replace `AsyncPostgresSaver` with a Redis-backed checkpointer for lower-latency WRITE approval state
 - **User authentication** — per-user session isolation and query history
 
 ---

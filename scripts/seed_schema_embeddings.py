@@ -198,7 +198,7 @@ async def async_main():
     print(f"◈ Seeding schema embeddings for {len(TABLES)} tables...")
     for i, table in enumerate(TABLES):
         desc = f"{table['description']} Columns: {', '.join(c['name'] for c in table['columns'])}."
-        emb = embed_text(desc)
+        emb = await embed_text(desc)
         await store_schema_embedding(
             table_name=table["table_name"],
             description=table["description"],

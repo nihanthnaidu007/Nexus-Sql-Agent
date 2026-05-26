@@ -66,3 +66,15 @@ async def get_schema_count() -> int:
     async with engine.connect() as conn:
         result = await conn.execute(text("SELECT COUNT(*) FROM schema_embeddings"))
         return result.scalar() or 0
+
+
+async def retrieve_relevant_schemas(query: str, top_k: int = 6) -> list:
+    """Embed the natural-language query and run a similarity search.
+
+    Convenience wrapper used by retrieve_schema_node and ad-hoc tooling
+    that wants to go from query string → ranked tables in one call.
+    """
+    from utils.embeddings import embed_text
+
+    embedding = await embed_text(query)
+    return await search_schemas(embedding, limit=top_k)
