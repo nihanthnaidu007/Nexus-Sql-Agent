@@ -24,7 +24,7 @@ from utils.langsmith_config import get_run_config, get_trace_url, is_tracing_ena
 from utils.sql_safety import is_read_only_sql
 from utils.logging_config import log_query_start, log_query_complete, log_node_event
 
-logger = logging.getLogger("nexus_sql.api")
+logger = logging.getLogger("nixus_sql.api")
 
 
 @asynccontextmanager
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to close checkpointer connection pool")
 
 
-app = FastAPI(title="NEXUS SQL API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="NIXUS SQL API", version="1.0.0", lifespan=lifespan)
 
 _raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8501,http://localhost:3000")
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
@@ -156,7 +156,7 @@ async def run_agent(req: RunRequest):
     config = get_thread_config(session_id, get_run_config(
         session_id=session_id,
         user_query=req.user_query,
-        run_name="nexus-sql-query"
+        run_name="nixus-sql-query"
     ))
     start = log_query_start(logger, session_id, req.user_query)
     final_state = await build_graph().ainvoke(initial_state, config=config)
@@ -221,7 +221,7 @@ async def stream_agent(req: StreamRequest):
     config = get_thread_config(session_id, get_run_config(
         session_id=session_id,
         user_query=req.user_query,
-        run_name="nexus-sql-stream"
+        run_name="nixus-sql-stream"
     ))
 
     stream_start = log_query_start(logger, session_id, req.user_query)

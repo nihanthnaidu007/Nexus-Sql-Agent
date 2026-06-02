@@ -2,15 +2,15 @@ services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_USER: nexus
-      POSTGRES_PASSWORD: nexus
-      POSTGRES_DB: nexus_sql
+      POSTGRES_USER: nixus
+      POSTGRES_PASSWORD: nixus
+      POSTGRES_DB: nixus_sql
     ports:
       - "${DB_HOST_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nexus -d nexus_sql"]
+      test: ["CMD-SHELL", "pg_isready -U nixus -d nixus_sql"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -21,7 +21,7 @@ services:
     entrypoint: ["/bin/bash", "scripts/entrypoint.sh"]
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://nexus:nexus@db:5432/nexus_sql
+      DATABASE_URL: postgresql://nixus:nixus@db:5432/nixus_sql
     ports:
       - "8000:8000"
     depends_on:

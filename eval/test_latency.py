@@ -1,5 +1,5 @@
 """
-Latency benchmark tests — Category 6 of the NEXUS SQL evaluation harness.
+Latency benchmark tests — Category 6 of the NIXUS SQL evaluation harness.
 
 Measures end-to-end latency for cache-miss (full LLM pipeline) and cache-hit
 (vector-similarity cache lookup) paths.

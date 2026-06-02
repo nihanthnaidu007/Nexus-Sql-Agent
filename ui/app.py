@@ -1,5 +1,5 @@
 """
-NEXUS SQL — Streamlit UI
+NIXUS SQL — Streamlit UI
 Quantum Terminal design: deep-space mission control.
 """
 import base64
@@ -48,7 +48,7 @@ def _load_plotly_fig(plotly_json_str: str):
     return go.Figure(fig_dict)
 
 st.set_page_config(
-    page_title="NEXUS SQL",
+    page_title="NIXUS SQL",
     page_icon="◈",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -94,22 +94,22 @@ FULL_CSS = """
 .block-container { padding-top: 1rem !important; position: relative; z-index: 1; max-width: 1400px !important; }
 [data-testid="stSidebar"] { display: none; }
 
-.nexus-topbar {
+.nixus-topbar {
     display: flex; align-items: center; justify-content: space-between;
     padding: 12px 0 20px; border-bottom: 1px solid var(--border-dim);
     margin-bottom: 24px;
 }
-.nexus-logo { font-family: 'Syne', sans-serif; font-size: 1.4rem; font-weight: 800;
+.nixus-logo { font-family: 'Syne', sans-serif; font-size: 1.4rem; font-weight: 800;
     color: var(--cyan); letter-spacing: 0.08em; }
-.nexus-tagline { font-family: 'Outfit', sans-serif; font-size: 0.75rem;
+.nixus-tagline { font-family: 'Outfit', sans-serif; font-size: 0.75rem;
     color: var(--text-muted); letter-spacing: 0.15em; text-transform: uppercase; }
-.nexus-status-dot { width: 8px; height: 8px; border-radius: 50%;
+.nixus-status-dot { width: 8px; height: 8px; border-radius: 50%;
     background: var(--neon-green); box-shadow: 0 0 8px var(--neon-green);
     display: inline-block; margin-right: 6px; }
-.nexus-status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.nixus-status-dot.offline { background: var(--red); box-shadow: 0 0 8px var(--red); }
 
-.nexus-command-wrap { position: relative; margin: 0 auto 32px; max-width: 820px; }
-.nexus-command-wrap::before {
+.nixus-command-wrap { position: relative; margin: 0 auto 32px; max-width: 820px; }
+.nixus-command-wrap::before {
     content: '◈'; position: absolute; left: 18px; top: 50%;
     transform: translateY(-50%); color: var(--cyan); font-size: 1rem;
     z-index: 2; pointer-events: none;
@@ -129,7 +129,7 @@ FULL_CSS = """
 }
 .stTextInput label { color: var(--text-muted) !important; font-family: 'Outfit', sans-serif !important; }
 
-.nexus-pill {
+.nixus-pill {
     display: inline-block; padding: 4px 12px; margin: 4px;
     border: 1px solid var(--border-dim); border-radius: 20px;
     font-family: 'Outfit', sans-serif; font-size: 0.72rem;
@@ -422,10 +422,10 @@ p, li { color: var(--text-secondary) !important; font-family: 'Outfit', sans-ser
 """
 
 PARTICLE_HTML = """
-<canvas id="nexus-particles" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0.5;"></canvas>
+<canvas id="nixus-particles" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:0.5;"></canvas>
 <script>
 (function() {
-  const canvas = document.getElementById('nexus-particles');
+  const canvas = document.getElementById('nixus-particles');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   let W = canvas.width = window.innerWidth;
@@ -664,14 +664,14 @@ def render_node_status(state: dict):
 # ── Top bar ─────────────────────────────────────────────────────────────────
 health = get_health()
 db_ok = health.get("db_connected", False)
-dot_class = "nexus-status-dot" if db_ok else "nexus-status-dot offline"
+dot_class = "nixus-status-dot" if db_ok else "nixus-status-dot offline"
 db_label = "DB CONNECTED" if db_ok else "DB OFFLINE"
 
 st.markdown(f"""
-<div class="nexus-topbar">
+<div class="nixus-topbar">
     <div>
-        <div class="nexus-logo">◈ NEXUS SQL</div>
-        <div class="nexus-tagline">Neural Query Intelligence</div>
+        <div class="nixus-logo">◈ NIXUS SQL</div>
+        <div class="nixus-tagline">Neural Query Intelligence</div>
     </div>
     <div style="display:flex;align-items:center;gap:16px;">
         <span style="font-family:'Fira Code',monospace;font-size:0.72rem;color:var(--text-muted);">
@@ -694,7 +694,7 @@ QUICK_EXAMPLES = [
     "Which playlists have the most tracks?"
 ]
 
-st.markdown('<div class="nexus-command-wrap">', unsafe_allow_html=True)
+st.markdown('<div class="nixus-command-wrap">', unsafe_allow_html=True)
 user_query = st.text_input(
     "Query",
     value=st.session_state.query_input,
@@ -745,7 +745,7 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
     st.markdown(
         '<div class="streaming-indicator">'
         '<div class="streaming-dot"></div>'
-        'NEXUS SQL is thinking...'
+        'NIXUS SQL is thinking...'
         '</div>',
         unsafe_allow_html=True
     )
@@ -790,7 +790,7 @@ if st.session_state.pending_approval:
         <div class="approval-modal-title">⚠ WRITE OPERATION REQUIRES APPROVAL</div>
         <div class="approval-modal-sub">
             The agent has generated a <strong>{html.escape(operation)}</strong> statement.
-            NEXUS SQL requires explicit human approval before executing any write operation.
+            NIXUS SQL requires explicit human approval before executing any write operation.
             Review the intent, then approve or deny below.
         </div>
         <div class="approval-operation">{html.escape(operation)}</div>

@@ -1,5 +1,5 @@
 """
-SQL correctness tests — Category 1 of the NEXUS SQL evaluation harness.
+SQL correctness tests — Category 1 of the NIXUS SQL evaluation harness.
 
 For each of the 30 gold queries:
   1. Execute gold_sql directly against the DB to get the expected result set.

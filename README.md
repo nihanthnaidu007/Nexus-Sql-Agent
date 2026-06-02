@@ -1,4 +1,4 @@
-# ◈ NEXUS SQL — LangGraph Text-to-SQL Agent
+# ◈ NIXUS SQL — LangGraph Text-to-SQL Agent
 
 A production-grade AI engineering project demonstrating an end-to-end Text-to-SQL pipeline. Built as a 12-node LangGraph state machine with pgvector semantic search, real-time SSE streaming, human-in-the-loop WRITE approval, self-correcting SQL generation, and automatic chart classification. Powered by Claude Haiku for intent parsing, Claude Sonnet for SQL generation and self-correction, and deployed as a live Streamlit UI over a FastAPI backend.
 
@@ -6,15 +6,15 @@ A production-grade AI engineering project demonstrating an end-to-end Text-to-SQ
 
 ## Interface — Query Input & State Machine
 
-![NEXUS SQL — Main interface showing query input, state machine, and generated SQL](images/image%201.png)
+![NIXUS SQL — Main interface showing query input, state machine, and generated SQL](images/image%201.png)
 
 ## Results — Table View with AI Insight
 
-![NEXUS SQL — Table view with data results and AI-generated insight card](images/image%202.png)
+![NIXUS SQL — Table view with data results and AI-generated insight card](images/image%202.png)
 
 ## Results — Auto-Generated Chart View
 
-![NEXUS SQL — Bar chart auto-generated from query results with LangSmith trace link](images/image%203.png)
+![NIXUS SQL — Bar chart auto-generated from query results with LangSmith trace link](images/image%203.png)
 
 ---
 
@@ -369,7 +369,7 @@ Create a `.env` file from `.env.example` and fill in the following:
 | `DATABASE_URL` | *(required)* | PostgreSQL connection string. Append `?sslmode=require` for managed databases |
 | `LANGCHAIN_TRACING_V2` | `false` | Enable LangSmith tracing |
 | `LANGCHAIN_API_KEY` | — | LangSmith API key |
-| `LANGCHAIN_PROJECT` | `nexus-sql` | Project name in LangSmith |
+| `LANGCHAIN_PROJECT` | `nixus-sql` | Project name in LangSmith |
 | `LANGCHAIN_ENDPOINT` | `https://api.smith.langchain.com` | LangSmith API endpoint |
 | `SCHEMA_RETRIEVAL_TOP_K` | `6` | Number of schema tables retrieved per query |
 | `FEWSHOT_RETRIEVAL_TOP_K` | `3` | Number of few-shot examples retrieved per query |
@@ -660,7 +660,7 @@ python eval/run_benchmark.py --no-latency
 python eval/run_benchmark.py --no-report
 
 # Override the API base URL
-NEXUS_API_URL=http://localhost:8000 python eval/run_benchmark.py
+NIXUS_API_URL=http://localhost:8000 python eval/run_benchmark.py
 ```
 
 Results are written to `eval/benchmark_results.json` (pass/fail per test) and `eval/benchmark_metrics.json` (latency percentiles, hit rates). `eval/report.py` merges both into `BENCHMARK.md`.

@@ -1,5 +1,5 @@
 """
-Safety classification tests — Category 4 of the NEXUS SQL evaluation harness.
+Safety classification tests — Category 4 of the NIXUS SQL evaluation harness.
 
 Three sub-tests:
 

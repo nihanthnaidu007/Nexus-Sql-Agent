@@ -1,5 +1,5 @@
 """
-Structured logging configuration for NEXUS SQL.
+Structured logging configuration for NIXUS SQL.
 All log lines use a consistent format so they can be parsed by
 log aggregators (Railway, Datadog, CloudWatch, etc.).
 """
@@ -17,7 +17,7 @@ logging.basicConfig(
 
 
 def get_logger(name: str) -> logging.Logger:
-    return logging.getLogger(f"nexus_sql.{name}")
+    return logging.getLogger(f"nixus_sql.{name}")
 
 
 def log_query_start(

@@ -1,5 +1,5 @@
 """
-NEXUS SQL Evaluation Metrics
+NIXUS SQL Evaluation Metrics
 -----------------------------
 Implemented in Phase 8. Metrics are computed by eval/report.py from
 pytest-json-report output. Run `python eval/run_benchmark.py` to generate
