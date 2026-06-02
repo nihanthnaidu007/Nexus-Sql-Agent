@@ -1,4 +1,4 @@
-import os
+from nixus.config import settings
 import logging
 from dotenv import load_dotenv
 from datetime import datetime
@@ -46,7 +46,7 @@ async def generate_sql_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "generate_sql"
     llm = ChatAnthropic(
         model="claude-sonnet-4-5",
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        anthropic_api_key=settings.anthropic_api_key,
         temperature=0.1,
         max_tokens=1024,
     )

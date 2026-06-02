@@ -2,12 +2,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logging
-import os
+from nixus.config import settings
 import time
 from langchain_core.runnables.config import RunnableConfig
 
-TRACING_ENABLED = os.environ.get("LANGCHAIN_TRACING_V2", "false").lower() == "true"
-LANGSMITH_PROJECT = os.environ.get("LANGCHAIN_PROJECT", "nixus-sql")
+TRACING_ENABLED = settings.tracing_enabled
+LANGSMITH_PROJECT = settings.langchain_project
 
 logger = logging.getLogger(__name__)
 

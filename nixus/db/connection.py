@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
+from nixus.config import settings
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     AsyncSession,
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy import create_engine, text
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = settings.database_url
 if not DATABASE_URL:
     raise RuntimeError(
         "DATABASE_URL environment variable not set. "

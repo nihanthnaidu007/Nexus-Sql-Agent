@@ -1,4 +1,4 @@
-import os
+from nixus.config import settings
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
@@ -8,7 +8,7 @@ from nixus.graph.state import SQLAgentState
 
 load_dotenv()
 
-MAX_ATTEMPTS = int(os.environ.get("MAX_CORRECTION_ATTEMPTS", "3"))
+MAX_ATTEMPTS = settings.max_correction_attempts
 
 from nixus.graph.nodes.parse_intent import parse_intent_node
 from nixus.graph.nodes.check_cache import check_cache_node
@@ -27,7 +27,7 @@ from nixus.safety.approval_gate import safety_check_node
 # the DATABASE_URL in plain `postgresql://` form. Strip any SQLAlchemy driver
 # suffix so it works regardless of how DATABASE_URL was configured.
 _pg_url = (
-    os.environ.get("DATABASE_URL", "")
+    (settings.database_url or "")
     .replace("postgresql+asyncpg://", "postgresql://")
     .replace("postgresql+psycopg2://", "postgresql://")
     .replace("postgres://", "postgresql://", 1)

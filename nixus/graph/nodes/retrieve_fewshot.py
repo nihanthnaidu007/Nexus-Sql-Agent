@@ -1,11 +1,11 @@
-import os
+from nixus.config import settings
 from datetime import datetime
 from nixus.db.fewshot_store import search_fewshots
 from nixus.utils.embeddings import embed_text
 from nixus.graph.state import SQLAgentState
 
-FEWSHOT_TOP_K = int(os.environ.get("FEWSHOT_RETRIEVAL_TOP_K", "3"))
-FEWSHOT_THRESHOLD = float(os.environ.get("FEWSHOT_SIMILARITY_THRESHOLD", "0.60"))
+FEWSHOT_TOP_K = settings.fewshot_retrieval_top_k
+FEWSHOT_THRESHOLD = settings.fewshot_similarity_threshold
 
 
 def now():

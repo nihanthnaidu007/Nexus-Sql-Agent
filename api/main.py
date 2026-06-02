@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
+from nixus.config import settings
 import uuid
 import asyncio
 import json
@@ -51,8 +51,8 @@ async def lifespan(app: FastAPI):
 
     try:
         eviction_stats = await evict_stale_cache_entries(
-            max_age_days=int(os.environ.get("CACHE_MAX_AGE_DAYS", "30")),
-            max_entries=int(os.environ.get("CACHE_MAX_ENTRIES", "10000")),
+            max_age_days=settings.cache_max_age_days,
+            max_entries=settings.cache_max_entries,
         )
         logger.info(f"Cache eviction on startup: {eviction_stats}")
     except Exception:
@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NIXUS SQL API", version="1.0.0", lifespan=lifespan)
 
-_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8501,http://localhost:3000")
+_raw_origins = settings.allowed_origins
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
@@ -415,7 +415,7 @@ async def run_edited_sql(req: RunSQLRequest):
 
 # Module-level LLM connectivity cache — avoids burning tokens on every probe.
 _llm_health_cache: dict = {"status": "unknown", "checked_at": 0.0}
-LLM_HEALTH_CACHE_TTL = int(os.environ.get("LLM_HEALTH_CACHE_TTL", "300"))  # 5 minutes
+LLM_HEALTH_CACHE_TTL = settings.llm_health_cache_ttl  # 5 minutes
 
 
 async def _check_llm_connectivity() -> dict:

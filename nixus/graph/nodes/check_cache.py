@@ -1,10 +1,10 @@
-import os
+from nixus.config import settings
 from datetime import datetime
 from nixus.db.query_cache import search_cache, increment_hit_count
 from nixus.utils.embeddings import embed_text
 from nixus.graph.state import SQLAgentState
 
-CACHE_HIT_THRESHOLD = float(os.environ.get("CACHE_SIMILARITY_THRESHOLD", "0.92"))
+CACHE_HIT_THRESHOLD = settings.cache_similarity_threshold
 
 
 def now():
