@@ -70,12 +70,77 @@ def reset_metrics(keys: list[str] | None = None) -> None:
     METRICS_FILE.write_text(json.dumps(existing, indent=2, default=str))
 
 
+# ── Infrastructure probe ─────────────────────────────────────────────────────
+# The eval suite is integration-only: every test needs the API (on :8000) and
+# Postgres (via DATABASE_URL) running. When infra is down, a refused TCP
+# connection raises (httpx.ConnectError / OperationalError) BEFORE any health
+# check, which pytest reports as 52 ERRORS instead of the intended SKIPS.
+#
+# We probe both services ONCE per session and SKIP the whole suite with one
+# actionable message, instead of letting each test error independently.
+
+_START_HINT = (
+    "Infrastructure is not running. Start it, then re-run the eval suite:\n"
+    "  1. docker compose up -d db          # Postgres on localhost:5433\n"
+    "  2. uvicorn api.main:app --host 0.0.0.0 --port 8000\n"
+    "     (or run scripts/dev.sh and set NIXUS_API_URL to the port it prints)\n"
+    "See BASELINE.md for the full bring-up + benchmark procedure."
+)
+
+
+class _InfraStatus:
+    def __init__(self, api_ok: bool, db_ok: bool):
+        self.api_ok = api_ok
+        self.db_ok = db_ok
+
+
+def _probe_api(url: str, timeout: float = 10.0) -> bool:
+    """True iff GET /api/health returns 200. A refused/timed-out connection
+    returns False instead of raising, so callers can skip cleanly."""
+    try:
+        with httpx.Client(base_url=url, timeout=timeout) as client:
+            return client.get("/api/health").status_code == 200
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, OSError):
+        return False
+
+
+def _probe_db() -> bool:
+    """True iff the sync engine can run SELECT 1. Any connection failure
+    (OperationalError, refused socket, etc.) returns False instead of raising."""
+    try:
+        with sync_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
 @pytest.fixture(scope="session")
-def http_client():
+def infra_status() -> _InfraStatus:
+    """Probe API + Postgres once per test session."""
+    return _InfraStatus(api_ok=_probe_api(BASE_URL), db_ok=_probe_db())
+
+
+@pytest.fixture(autouse=True)
+def _require_infra(infra_status: _InfraStatus) -> None:
+    """Skip (not error) every integration test when infra is unreachable.
+
+    Covers tests that hit the API via http_client AND tests that open a direct
+    DB connection (e.g. test_cache_miss_latency), so a refused connection never
+    surfaces as an ERROR."""
+    if not infra_status.api_ok:
+        pytest.skip(f"API not reachable at {BASE_URL}.\n{_START_HINT}")
+    if not infra_status.db_ok:
+        pytest.skip(f"Postgres not reachable via DATABASE_URL.\n{_START_HINT}")
+
+
+@pytest.fixture(scope="session")
+def http_client(infra_status: _InfraStatus):
+    # infra_status was already probed; if the API is down we skip here too so
+    # the client is only ever constructed against a reachable server.
+    if not infra_status.api_ok:
+        pytest.skip(f"API not reachable at {BASE_URL}.\n{_START_HINT}")
     with httpx.Client(base_url=BASE_URL, timeout=120.0) as client:
-        resp = client.get("/api/health")
-        if resp.status_code != 200:
-            pytest.skip(f"API server not reachable at {BASE_URL} — skipping eval suite")
         yield client
 
 
