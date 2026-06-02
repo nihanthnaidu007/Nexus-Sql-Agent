@@ -1,56 +1,14 @@
 """
-Idempotent database setup (extension, vector tables, Chinook DDL).
+Idempotent database setup. The APPLICATION schema (pgvector extension + vector
+tables) is now owned by the numbered SQL migrations under
+``nixus/db/migrations/`` and applied by the migration runner. This module drives
+the runner for schema, then ensures the Chinook sample schema + data.
 Used by FastAPI startup and `python scripts/init_db.py`.
 """
 from sqlalchemy import text
 
 from nixus.db.connection import sync_engine
-
-INIT_SQL = """
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE IF NOT EXISTS schema_embeddings (
-    id SERIAL PRIMARY KEY,
-    table_name TEXT NOT NULL UNIQUE,
-    description TEXT NOT NULL,
-    columns_json TEXT NOT NULL,
-    sample_values_json TEXT,
-    embedding vector(1536) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS schema_emb_idx ON schema_embeddings
-    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-
-CREATE TABLE IF NOT EXISTS fewshot_examples (
-    id SERIAL PRIMARY KEY,
-    natural_language TEXT NOT NULL,
-    sql_query TEXT NOT NULL,
-    tables_used TEXT[],
-    query_type TEXT NOT NULL,
-    embedding vector(1536) NOT NULL,
-    auto_learned BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS fewshot_emb_idx ON fewshot_examples
-    USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-
-CREATE TABLE IF NOT EXISTS query_cache (
-    id SERIAL PRIMARY KEY,
-    user_query TEXT NOT NULL,
-    query_embedding vector(1536) NOT NULL,
-    generated_sql TEXT NOT NULL,
-    result_preview_json TEXT,
-    row_count INTEGER,
-    execution_time_ms FLOAT,
-    chart_type TEXT,
-    explanation TEXT,
-    hit_count INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    last_accessed TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX IF NOT EXISTS cache_emb_idx ON query_cache
-    USING hnsw (query_embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-"""
+from nixus.db.migrations.runner import apply_migrations_sync
 
 CHINOOK_DDL = """
 CREATE TABLE IF NOT EXISTS "Artist" (
@@ -168,11 +126,9 @@ def seed_chinook_data() -> bool:
 
 
 def init_database() -> None:
-    """Create pgvector extension, agent tables, and Chinook schema if missing."""
-    with sync_engine.connect() as conn:
-        conn.execute(text(INIT_SQL))
-        conn.commit()
-    print("◈ Vector tables initialized.")
+    """Apply application-schema migrations, then ensure Chinook sample schema + data."""
+    applied = apply_migrations_sync()
+    print(f"◈ Migrations applied: {applied if applied else 'none (already up to date)'}")
 
     with sync_engine.connect() as conn:
         conn.execute(text(CHINOOK_DDL))
@@ -180,13 +136,5 @@ def init_database() -> None:
     print("◈ Chinook schema initialized.")
 
     seed_chinook_data()
-
-    # Migration: remove dead success_count column if present from older schema
-    with sync_engine.connect() as conn:
-        conn.execute(text("""
-            ALTER TABLE fewshot_examples
-            DROP COLUMN IF EXISTS success_count
-        """))
-        conn.commit()
 
     print("◈ Database initialized successfully.")
