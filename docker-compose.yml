@@ -1,3 +1,5 @@
+name: nixus-sql-agent
+
 services:
   db:
     image: pgvector/pgvector:pg16

@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-from utils.retry import embedding_retry
+from nixus.utils.retry import embedding_retry
 
 load_dotenv()
 

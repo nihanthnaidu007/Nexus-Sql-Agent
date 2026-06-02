@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
 from graph.state import SQLAgentState
-from utils.retry import llm_retry
-from utils.sql_safety import is_read_only_sql
+from nixus.utils.retry import llm_retry
+from nixus.utils.sql_safety import is_read_only_sql
 from safety.approval_gate import contains_write_operation
 
 load_dotenv()

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-from utils.embeddings import embed_text
+from nixus.utils.embeddings import embed_text
 from db.schema_store import store_schema_embedding, get_schema_count
 
 TABLES = [

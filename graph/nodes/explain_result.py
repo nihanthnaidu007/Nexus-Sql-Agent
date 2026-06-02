@@ -8,9 +8,9 @@ load_dotenv()
 
 from db.fewshot_store import store_fewshot_example
 from db.query_cache import store_cache_entry
-from utils.embeddings import embed_text
-from utils.confidence import compute_confidence_score
-from utils.retry import llm_retry
+from nixus.utils.embeddings import embed_text
+from nixus.utils.confidence import compute_confidence_score
+from nixus.utils.retry import llm_retry
 from graph.state import SQLAgentState
 
 logger = logging.getLogger(__name__)

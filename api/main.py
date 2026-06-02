@@ -20,9 +20,9 @@ from graph.state import SQLAgentState
 from db.connection import check_db_connection
 from db.query_cache import get_cache_stats, evict_stale_cache_entries
 from db.fewshot_store import get_fewshot_stats
-from utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
-from utils.sql_safety import is_read_only_sql
-from utils.logging_config import log_query_start, log_query_complete, log_node_event
+from nixus.utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
+from nixus.utils.sql_safety import is_read_only_sql
+from nixus.utils.logging_config import log_query_start, log_query_complete, log_node_event
 
 logger = logging.getLogger("nixus_sql.api")
 

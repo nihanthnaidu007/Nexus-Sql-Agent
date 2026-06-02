@@ -8,7 +8,7 @@ from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 from typing import Optional
 from graph.state import SQLAgentState
-from utils.retry import llm_retry
+from nixus.utils.retry import llm_retry
 
 llm = ChatAnthropic(
     model="claude-haiku-4-5",

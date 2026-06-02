@@ -75,7 +75,7 @@ async def store_fewshot_example(
     Returns True if stored, False if skipped due to near-duplicate detection
     (cosine similarity >= 0.98 against an existing row).
     """
-    from utils.embeddings import embed_text
+    from nixus.utils.embeddings import embed_text
     embedding = await embed_text(natural_language)
 
     if await _is_duplicate(embedding):

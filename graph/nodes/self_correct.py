@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
 from graph.state import SQLAgentState
-from utils.retry import llm_retry
+from nixus.utils.retry import llm_retry
 
 load_dotenv()
 

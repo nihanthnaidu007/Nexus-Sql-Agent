@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from db.query_cache import search_cache, increment_hit_count
-from utils.embeddings import embed_text
+from nixus.utils.embeddings import embed_text
 from graph.state import SQLAgentState
 
 CACHE_HIT_THRESHOLD = float(os.environ.get("CACHE_SIMILARITY_THRESHOLD", "0.92"))

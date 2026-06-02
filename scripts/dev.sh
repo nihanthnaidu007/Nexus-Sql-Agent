@@ -32,7 +32,7 @@ docker compose up -d db >/dev/null
 
 echo "◈ Waiting for database to become healthy..."
 for i in $(seq 1 30); do
-  status="$(docker inspect -f '{{.State.Health.Status}}' nexus-sql-agent-db-1 2>/dev/null || echo starting)"
+  status="$(docker inspect -f '{{.State.Health.Status}}' nixus-sql-agent-db-1 2>/dev/null || echo starting)"
   if [ "$status" = "healthy" ]; then
     echo "  ✓ database ready"
     break

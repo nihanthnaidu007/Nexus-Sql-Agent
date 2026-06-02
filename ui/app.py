@@ -14,8 +14,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.sql_formatter import highlight_sql, format_sql_pretty
-from utils.confidence import confidence_badge
+from nixus.utils.sql_formatter import highlight_sql, format_sql_pretty
+from nixus.utils.confidence import confidence_badge
 
 API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000")
 

@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from db.fewshot_store import search_fewshots
-from utils.embeddings import embed_text
+from nixus.utils.embeddings import embed_text
 from graph.state import SQLAgentState
 
 FEWSHOT_TOP_K = int(os.environ.get("FEWSHOT_RETRIEVAL_TOP_K", "3"))
