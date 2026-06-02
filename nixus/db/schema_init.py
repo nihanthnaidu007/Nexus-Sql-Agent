@@ -1,13 +1,24 @@
 """
-Idempotent database setup. The APPLICATION schema (pgvector extension + vector
-tables) is now owned by the numbered SQL migrations under
-``nixus/db/migrations/`` and applied by the migration runner. This module drives
-the runner for schema, then ensures the Chinook sample schema + data.
+Idempotent database setup, split across the two databases (2.1).
+
+STATE database (NIXUS-owned, READ-WRITE): the application schema (pgvector
+extension + vector tables + ``schema_migrations``) is owned by the numbered SQL
+migrations under ``nixus/db/migrations/`` and applied here via the migration
+runner.
+
+TARGET database (the user's data, READ-ONLY to the app): the Chinook sample
+schema + data now live in their OWN database. They are provisioned out-of-band —
+``scripts/init-target-db.sql`` (the compose init script on a fresh stack) creates
+the database + read-only role, and ``scripts/migrate_chinook.py`` loads the data
+through a writable OWNER connection. The app only ever READS the target, so this
+module no longer creates Chinook in the state database; it just reports target
+Chinook presence (best-effort, read-only) for operator visibility.
+
 Used by FastAPI startup and `python scripts/init_db.py`.
 """
 from sqlalchemy import text
 
-from nixus.db.connection import sync_engine
+from nixus.db.connection import sync_target_engine
 from nixus.db.migrations.runner import apply_migrations_sync
 
 CHINOOK_DDL = """
@@ -111,30 +122,40 @@ CREATE TABLE IF NOT EXISTS "PlaylistTrack" (
 """
 
 
-def seed_chinook_data() -> bool:
-    with sync_engine.connect() as conn:
-        artist_count = conn.execute(
-            text('SELECT COUNT(*) FROM "Artist"')
-        ).scalar()
+def report_chinook_presence() -> bool:
+    """Best-effort, READ-ONLY check that the TARGET database has Chinook data.
 
-        if artist_count == 0:
-            print("⚠ No Chinook data found.")
-            print("  Run: python scripts/migrate_chinook.py  (downloads sample data; no extra DB needed)")
-            return False
-        print(f"◈ Chinook data present ({artist_count} artists).")
-        return True
+    Never raises: an unset/unreachable target (or the read-only role lacking the
+    table) just prints a hint and returns False, so app startup is never coupled
+    to target provisioning. The app reads Chinook through the read-only role; it
+    must NOT try to create or seed it here.
+    """
+    if sync_target_engine is None:
+        print("⚠ TARGET_DATABASE_URL not set — skipping Chinook (target_db) presence check.")
+        return False
+    try:
+        with sync_target_engine.connect() as conn:
+            artist_count = conn.execute(
+                text('SELECT COUNT(*) FROM "Artist"')
+            ).scalar()
+    except Exception as e:
+        print(f"⚠ Could not read Chinook from target_db (read-only): {type(e).__name__}.")
+        print("  Provision it: scripts/init-target-db.sql (db+role) + python scripts/migrate_chinook.py (data).")
+        return False
+
+    if not artist_count:
+        print("⚠ Target Chinook tables present but empty.")
+        print("  Run: python scripts/migrate_chinook.py  (loads sample data into target_db)")
+        return False
+    print(f"◈ Chinook present in target_db ({artist_count} artists, read-only).")
+    return True
 
 
 def init_database() -> None:
-    """Apply application-schema migrations, then ensure Chinook sample schema + data."""
+    """Apply application-schema migrations to STATE db; report target Chinook."""
     applied = apply_migrations_sync()
-    print(f"◈ Migrations applied: {applied if applied else 'none (already up to date)'}")
+    print(f"◈ State migrations applied: {applied if applied else 'none (already up to date)'}")
 
-    with sync_engine.connect() as conn:
-        conn.execute(text(CHINOOK_DDL))
-        conn.commit()
-    print("◈ Chinook schema initialized.")
-
-    seed_chinook_data()
+    report_chinook_presence()
 
     print("◈ Database initialized successfully.")

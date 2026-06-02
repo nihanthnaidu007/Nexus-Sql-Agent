@@ -6,9 +6,10 @@ each, each inside its own transaction, recording applied versions in a
 
 Async by design (asyncpg — the same driver the app's async engine uses), so
 Phase 2 can call it from the async startup path; a thin sync wrapper is provided
-for CLI/`schema_init` use. The target database is read from the single config
-source (`nixus.config.settings.database_url`) at call time, so a one-shot
-``DATABASE_URL=...`` override (e.g. for the fresh-DB rebuild test) is honored.
+for CLI/`schema_init` use. Migrations run against the STATE database, read from
+the single config source (`nixus.config.settings.state_url`) at call time, so a
+one-shot ``STATE_DATABASE_URL=...`` (or legacy ``DATABASE_URL=...``) override
+(e.g. for the fresh-DB rebuild test) is honored.
 
 Scope is the APPLICATION schema only. LangGraph's checkpointer tables are owned
 by ``AsyncPostgresSaver.setup()`` and are never created, altered, or tracked here.
@@ -38,10 +39,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 def _pg_dsn() -> str:
     """Plain ``postgresql://`` DSN for asyncpg, from the single config source.
 
-    Strips any SQLAlchemy driver suffix so asyncpg.connect accepts it regardless
-    of how DATABASE_URL was written.
+    Migrations own the NIXUS APPLICATION schema → the STATE database. Strips any
+    SQLAlchemy driver suffix so asyncpg.connect accepts it regardless of how the
+    state URL was written.
     """
-    url = settings.database_url or ""
+    url = settings.state_url or ""
     return (
         url.replace("postgresql+asyncpg://", "postgresql://")
         .replace("postgresql+psycopg2://", "postgresql://")

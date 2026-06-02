@@ -1,8 +1,16 @@
 """
-Load Chinook sample data into the database pointed to by DATABASE_URL.
+Load Chinook sample data into the TARGET database.
+
+Chinook is sample TARGET data (the user's data), so it lives in its own database
+and is loaded through a writable OWNER connection — the app's read-only target
+role cannot create tables or insert. The connection URL comes from
+``TARGET_ADMIN_DATABASE_URL`` (the owner connection to the target DB), falling
+back to the legacy ``DATABASE_URL`` for back-compat. The table schema is ensured
+idempotently before inserting, so this is safe against a freshly created
+(empty-schema) target.
 
 Default: downloads official ChinookData.json (PascalCase columns) from GitHub,
-truncates the demo tables, and inserts rows — no separate `chinook` database.
+truncates the demo tables, and inserts rows.
 
 Legacy: set CHINOOK_SOURCE_URL to a PostgreSQL URL whose DB already has the
 lowercase Chinook tables (genre, artist, …) to copy from instead of using JSON.
@@ -30,7 +38,18 @@ load_dotenv()
 
 from sqlalchemy import create_engine, text
 
-NIXUS_URL = os.environ["DATABASE_URL"]
+from nixus.config import settings
+from nixus.db.schema_init import CHINOOK_DDL
+
+# Writable OWNER connection to the TARGET database. The app never uses this; only
+# this one-time seed does. Prefer TARGET_ADMIN_DATABASE_URL; fall back to the
+# legacy DATABASE_URL so existing single-DB setups still work.
+TARGET_ADMIN_URL = settings.target_admin_url or settings.database_url
+if not TARGET_ADMIN_URL:
+    raise RuntimeError(
+        "Set TARGET_ADMIN_DATABASE_URL (the writable owner connection to the "
+        "target database) to seed Chinook. See .env.example."
+    )
 
 CHINOOK_JSON_DEFAULT = (
     "https://raw.githubusercontent.com/lerocha/chinook-database/"
@@ -98,6 +117,18 @@ def _fetch_chinook_json() -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": "Nixus-Sql-Agent/1.0"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _ensure_schema(dst) -> None:
+    """Create the Chinook tables in the target if absent (idempotent).
+
+    Uses ``CREATE TABLE IF NOT EXISTS`` (the canonical DDL), so a freshly created
+    target — or one provisioned by ``scripts/init-target-db.sql`` — is ready to
+    receive rows. Runs through the owner connection.
+    """
+    with dst.connect() as conn:
+        conn.execute(text(CHINOOK_DDL))
+        conn.commit()
 
 
 def _artist_count(dst) -> int:
@@ -200,7 +231,8 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    dst = create_engine(NIXUS_URL)
+    dst = create_engine(TARGET_ADMIN_URL)
+    _ensure_schema(dst)
     legacy = os.environ.get("CHINOOK_SOURCE_URL", "").strip()
 
     existing = _artist_count(dst)

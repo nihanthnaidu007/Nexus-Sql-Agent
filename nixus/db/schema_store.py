@@ -1,11 +1,12 @@
 from sqlalchemy import text
-from nixus.db.connection import engine
+# schema_embeddings is NIXUS-owned bookkeeping → STATE database (read-write).
+from nixus.db.connection import state_engine
 
 
 async def search_schemas(embedding: list, limit: int = 6) -> list:
     """Async pgvector similarity search on schema_embeddings."""
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
-    async with engine.connect() as conn:
+    async with state_engine.connect() as conn:
         rows = await conn.execute(text("""
             SELECT
                 table_name,
@@ -40,7 +41,7 @@ async def store_schema_embedding(
 ) -> None:
     """Store or update a schema embedding."""
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
-    async with engine.begin() as conn:
+    async with state_engine.begin() as conn:
         await conn.execute(text("""
             INSERT INTO schema_embeddings
                 (table_name, description, columns_json,
@@ -63,7 +64,7 @@ async def store_schema_embedding(
 
 
 async def get_schema_count() -> int:
-    async with engine.connect() as conn:
+    async with state_engine.connect() as conn:
         result = await conn.execute(text("SELECT COUNT(*) FROM schema_embeddings"))
         return result.scalar() or 0
 

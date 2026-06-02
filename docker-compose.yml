@@ -11,6 +11,10 @@ services:
       - "${DB_HOST_PORT:-5433}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # On first init, provision the read-only TARGET database (nixus_chinook)
+      # and the SELECT-only role (nixus_readonly). Only applied on a fresh init:
+      # `docker compose down -v && docker compose up`.
+      - ./scripts/init-target-db.sql:/docker-entrypoint-initdb.d/10-init-target-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nixus -d nixus_sql"]
       interval: 5s
@@ -23,6 +27,15 @@ services:
     entrypoint: ["/bin/bash", "scripts/entrypoint.sh"]
     env_file: .env
     environment:
+      # state_db — NIXUS-owned bookkeeping, READ-WRITE (owner role `nixus`).
+      STATE_DATABASE_URL: postgresql://nixus:nixus@db:5432/nixus_sql
+      # target_db — the user's data, STRICTLY READ-ONLY (role `nixus_readonly`).
+      # This is the ONLY handle the app has to the target.
+      TARGET_DATABASE_URL: postgresql://nixus_readonly:nixus_readonly@db:5432/nixus_chinook
+      # Writable OWNER connection to the target — used ONLY by the one-time
+      # Chinook seed (scripts/migrate_chinook.py), never by the app at runtime.
+      TARGET_ADMIN_DATABASE_URL: postgresql://nixus:nixus@db:5432/nixus_chinook
+      # Legacy alias kept for back-compat (resolves to state).
       DATABASE_URL: postgresql://nixus:nixus@db:5432/nixus_sql
     ports:
       - "8000:8000"
