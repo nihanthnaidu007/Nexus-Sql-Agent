@@ -31,5 +31,5 @@ python scripts/seed_fewshot_examples.py --skip-if-exists
 echo "◈ Loading Chinook sample data (skip if already present)..."
 python scripts/migrate_chinook.py --skip-if-exists
 
-echo "◈ Starting NEXUS SQL API on :8000 ..."
+echo "◈ Starting NIXUS SQL API on :8000 ..."
 exec uvicorn api.main:app --host 0.0.0.0 --port 8000

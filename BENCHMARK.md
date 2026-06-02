@@ -1,4 +1,4 @@
-# NEXUS SQL — Benchmark Report
+# NIXUS SQL — Benchmark Report
 
 **Generated:** 2026-05-19 00:53 UTC  
 **Suite duration:** 248.8s  

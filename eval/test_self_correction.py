@@ -1,5 +1,5 @@
 """
-Self-correction resilience tests — Category 3 of the NEXUS SQL evaluation harness.
+Self-correction resilience tests — Category 3 of the NIXUS SQL evaluation harness.
 
 These 5 questions are intentionally tricky — they involve unusual joins,
 window functions, CTEs, or ambiguous phrasing that is likely to produce an

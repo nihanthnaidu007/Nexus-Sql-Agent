@@ -7,7 +7,7 @@ import time
 from langchain_core.runnables.config import RunnableConfig
 
 TRACING_ENABLED = os.environ.get("LANGCHAIN_TRACING_V2", "false").lower() == "true"
-LANGSMITH_PROJECT = os.environ.get("LANGCHAIN_PROJECT", "nexus-sql")
+LANGSMITH_PROJECT = os.environ.get("LANGCHAIN_PROJECT", "nixus-sql")
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def get_langsmith_client():
 def get_run_config(
     session_id: str,
     user_query: str,
-    run_name: str = "nexus-sql-query"
+    run_name: str = "nixus-sql-query"
 ) -> RunnableConfig:
     """
     Returns a RunnableConfig that attaches LangSmith metadata to a graph
@@ -41,7 +41,7 @@ def get_run_config(
     if not TRACING_ENABLED:
         return RunnableConfig(
             run_name=run_name,
-            tags=["nexus-sql"],
+            tags=["nixus-sql"],
             metadata={
                 "session_id": session_id,
                 "user_query": user_query[:100],
@@ -52,7 +52,7 @@ def get_run_config(
     return RunnableConfig(
         run_name=run_name,
         tags=[
-            "nexus-sql",
+            "nixus-sql",
             f"session:{session_id[:8]}",
         ],
         metadata={

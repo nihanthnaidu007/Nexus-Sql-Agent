@@ -1,5 +1,5 @@
 """
-NEXUS SQL evaluation harness — CLI entry point.
+NIXUS SQL evaluation harness — CLI entry point.
 
 Usage:
     python eval/run_benchmark.py                            # run all categories
@@ -15,7 +15,7 @@ Valid --category values:
     safety, chart_classification, latency, all
 
 Environment:
-    NEXUS_API_URL   Override the API base URL (default: http://localhost:8000)
+    NIXUS_API_URL   Override the API base URL (default: http://localhost:8000)
 
 The script runs pytest with --json-report and writes results to
 eval/benchmark_results.json, then calls eval/report.py to produce BENCHMARK.md.
@@ -63,7 +63,7 @@ CATEGORY_METRIC_KEYS: dict[str, list[str]] = {
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run the NEXUS SQL evaluation harness",
+        description="Run the NIXUS SQL evaluation harness",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

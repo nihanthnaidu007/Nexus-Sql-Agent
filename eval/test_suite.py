@@ -1,5 +1,5 @@
 """
-NEXUS SQL Evaluation Suite
+NIXUS SQL Evaluation Suite
 --------------------------
 Implemented in Phase 8. See individual test files:
 

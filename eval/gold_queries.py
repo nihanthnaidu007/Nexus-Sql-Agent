@@ -1,5 +1,5 @@
 """
-Gold query set for NEXUS SQL evaluation harness.
+Gold query set for NIXUS SQL evaluation harness.
 
 30 queries across 6 categories:
   A01-A05  Simple filter / single-table SELECT

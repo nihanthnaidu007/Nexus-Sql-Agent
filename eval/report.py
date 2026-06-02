@@ -149,7 +149,7 @@ def generate_report(results_path: Path, output_path: Path, metrics_path: Path | 
     hit_lat = metrics.get("cache_hit_latencies") or {}
 
     lines: list[str] = [
-        "# NEXUS SQL — Benchmark Report",
+        "# NIXUS SQL — Benchmark Report",
         "",
         f"**Generated:** {run_date}  ",
         f"**Suite duration:** {duration_s:.1f}s  ",

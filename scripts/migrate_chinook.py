@@ -30,7 +30,7 @@ load_dotenv()
 
 from sqlalchemy import create_engine, text
 
-NEXUS_URL = os.environ["DATABASE_URL"]
+NIXUS_URL = os.environ["DATABASE_URL"]
 
 CHINOOK_JSON_DEFAULT = (
     "https://raw.githubusercontent.com/lerocha/chinook-database/"
@@ -95,7 +95,7 @@ def _fetch_chinook_json() -> dict:
 
     url = os.environ.get("CHINOOK_JSON_URL", CHINOOK_JSON_DEFAULT)
     print(f"◈ Fetching Chinook dataset from:\n  {url}")
-    req = urllib.request.Request(url, headers={"User-Agent": "Nexus-Sql-Agent/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "Nixus-Sql-Agent/1.0"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -183,7 +183,7 @@ def migrate_from_legacy_postgres(src_url: str, dst) -> int:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Load Chinook sample data into NEXUS_SQL.",
+        description="Load Chinook sample data into NIXUS_SQL.",
     )
     parser.add_argument(
         "--skip-if-exists",
@@ -200,7 +200,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    dst = create_engine(NEXUS_URL)
+    dst = create_engine(NIXUS_URL)
     legacy = os.environ.get("CHINOOK_SOURCE_URL", "").strip()
 
     existing = _artist_count(dst)

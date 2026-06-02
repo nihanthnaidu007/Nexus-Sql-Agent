@@ -14,12 +14,12 @@ API_PORT="${API_PORT:-$(free_port)}"
 UI_PORT="${UI_PORT:-$(free_port)}"
 
 export DB_HOST_PORT API_PORT UI_PORT
-export DATABASE_URL="postgresql://nexus:nexus@localhost:${DB_HOST_PORT}/nexus_sql"
+export DATABASE_URL="postgresql://nixus:nixus@localhost:${DB_HOST_PORT}/nixus_sql"
 export API_BASE_URL="http://localhost:${API_PORT}"
 
 cat <<EOF
 ─────────────────────────────────────────
-  NEXUS SQL — dev runner
+  NIXUS SQL — dev runner
 ─────────────────────────────────────────
   DB   → localhost:${DB_HOST_PORT}
   API  → ${API_BASE_URL}

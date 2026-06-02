@@ -1,5 +1,5 @@
 """
-Cache accuracy tests — Category 2 of the NEXUS SQL evaluation harness.
+Cache accuracy tests — Category 2 of the NIXUS SQL evaluation harness.
 
 Tests two properties:
   1. Paraphrase hit rate: semantically identical questions should hit the cache

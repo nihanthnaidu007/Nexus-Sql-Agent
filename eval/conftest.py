@@ -1,8 +1,8 @@
 """
-Shared pytest fixtures and helpers for the NEXUS SQL evaluation harness.
+Shared pytest fixtures and helpers for the NIXUS SQL evaluation harness.
 
 The API server must be running before executing any tests.
-Set NEXUS_API_URL to override the default http://localhost:8000.
+Set NIXUS_API_URL to override the default http://localhost:8000.
 """
 
 import os
@@ -19,13 +19,13 @@ from sqlalchemy import text
 
 from db.connection import sync_engine
 
-BASE_URL = os.environ.get("NEXUS_API_URL", "http://localhost:8000")
+BASE_URL = os.environ.get("NIXUS_API_URL", "http://localhost:8000")
 
 # Sidecar file that custom metrics (latency percentiles, hit rates, etc.)
 # are written to so eval/report.py can pick them up when rendering
 # BENCHMARK.md. pytest-json-report captures pass/fail per test but not the
 # numeric measurements made inside the tests.
-METRICS_FILE = Path(os.environ.get("NEXUS_METRICS_FILE", "eval/benchmark_metrics.json"))
+METRICS_FILE = Path(os.environ.get("NIXUS_METRICS_FILE", "eval/benchmark_metrics.json"))
 
 
 def record_metric(key: str, value) -> None:

@@ -1,5 +1,5 @@
 """
-Chart classification tests — Category 5 of the NEXUS SQL evaluation harness.
+Chart classification tests — Category 5 of the NIXUS SQL evaluation harness.
 
 Uses /api/run-sql (not /api/run) to bypass LLM generation and directly test
 the classify_chart_node with known, controlled result shapes.
