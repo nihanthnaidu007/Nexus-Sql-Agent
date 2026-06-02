@@ -128,7 +128,7 @@ def _percentile(sorted_values: list[float], p: float) -> float:
 def _timed_run(client: httpx.Client, question: str) -> tuple[float, dict]:
     t0 = time.monotonic()
     resp = client.post(
-        "/api/run",
+        "/api/v1/run",
         json={"user_query": question, "session_id": str(uuid.uuid4())},
     )
     ms = (time.monotonic() - t0) * 1000

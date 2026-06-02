@@ -40,8 +40,9 @@ nixus/                     the framework-agnostic core
 └── services/             the query entry point
     └── query_service.py   run_query(user_query, session_id) — THE function adapters call
 
-api/                       FastAPI adapter (HTTP shell only): routes, request/response models,
-                           SSE streaming, session id plumbing, lifespan (checkpointer + graph build)
+api/                       FastAPI adapter (HTTP shell only): routes (all under /api/v1),
+                           request/response models, SSE streaming, lifespan (checkpointer +
+                           graph build), and context.py (RequestContext: per-request identity)
 ui/                        Streamlit adapter (app.py)
 eval/                      benchmark + behavioral tests (run_benchmark.py, test_*.py, conftest.py)
 scripts/                   operational scripts: init_db, seed_*, migrate_chinook (Chinook retired in 2.4)
@@ -59,13 +60,34 @@ scripts/                   operational scripts: init_db, seed_*, migrate_chinook
 query through the compiled graph and returns the final state. **Adapters must go
 through it** rather than re-implementing the graph-invocation sequence.
 
-- The API's `POST /api/run` handler is a thin shell: it resolves the session id
-  (uuid default) and calls `run_query`.
-- **Gap:** the streaming path (`POST /api/stream`, SSE via `astream_events`) still
+- The API's `POST /api/v1/run` handler is a thin shell: it builds a
+  `RequestContext` (resolving the session id) and calls `run_query` with the
+  plain `ctx.session_id` value — the core never receives the context type.
+- **Gap:** the streaming path (`POST /api/v1/stream`, SSE via `astream_events`) still
   lives inline in `api/main.py` as of 1.1f. It moves into the service when a
   non-HTTP consumer needs streaming. Until then, only the non-streaming run is
   extracted. `get_thread_config` (LangGraph thread/checkpointer plumbing) lives in
   the service and is imported by the API's streaming/approve handlers.
+
+## API versioning and request context (as of 1.3)
+
+- **All endpoints are served under `/api/v1/`** (mounted via a single
+  `APIRouter(prefix="/api/v1")` in `api/main.py`): `/api/v1/run`, `/api/v1/stream`,
+  `/api/v1/run-sql`, `/api/v1/approve-write`, `/api/v1/cache-stats`,
+  `/api/v1/cache-evict`, `/api/v1/fewshot-stats`, `/api/v1/health`. This is the
+  stable contract for the UI, the future React frontend, and external consumers.
+- **Health** is reachable at `/api/v1/health` and is *also* aliased, unversioned,
+  at `/api/health` — the one intentional exception — for infrastructure probes
+  (load balancers, uptime checks) that expect a version-independent path. (The
+  docker-compose healthcheck probes Postgres with `pg_isready`, not this path.)
+- **`RequestContext`** (`api/context.py`) is the API-layer carrier of per-request
+  identity — **`session_id` only in V1**. Handlers build it per request and pass
+  the plain `ctx.session_id` value across the core boundary (never the context
+  type), so rule 1 holds. Auth identity will extend `RequestContext` later
+  (Phase 8) without reshaping handler signatures.
+- **No multi-tenancy in V1.** There is intentionally **no `tenant_id`** field,
+  column, or convention anywhere. Tenancy is a V2 concern, addable later via a
+  migration and a new `RequestContext` field — it is deliberately absent now.
 
 ## The nine rules every later prompt obeys
 
@@ -90,8 +112,8 @@ through it** rather than re-implementing the graph-invocation sequence.
    distinction as intent and do not entangle NIXUS's own tables with user-data
    access in a way that blocks the split.
 7. **All UI-relevant state is exposed as `/api/v1` JSON.** Nothing the UI needs
-   may live only in Python memory. (Current routes are under `/api/*`; the
-   versioned `/api/v1` surface is the target as the API formalizes.)
+   may live only in Python memory. As of 1.3 every route is under `/api/v1/`
+   (with `/api/health` kept as an unversioned infra alias).
 8. **One responsibility per file.** Soft cap ~200 lines as a smell detector, not a
    hard limit.
 9. **Tests mirror the source tree.** **Current reality:** tests live in `eval/` as

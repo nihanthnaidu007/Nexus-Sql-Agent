@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ from nixus.utils.langsmith_config import get_run_config, get_trace_url, is_traci
 from nixus.utils.sql_safety import is_read_only_sql
 from nixus.utils.logging_config import log_query_start, log_query_complete, log_node_event
 from nixus.services.query_service import run_query, get_thread_config
+from api.context import RequestContext
 
 logger = logging.getLogger("nixus_sql.api")
 
@@ -80,6 +81,12 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+# All endpoints are served under the versioned /api/v1 prefix (stable contract
+# for the UI, the future React frontend, and external consumers). The router is
+# mounted on the app at the bottom of this module, after every route is defined.
+# Health is additionally aliased at the unversioned /api/health for infra probes.
+router = APIRouter(prefix="/api/v1")
+
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -129,22 +136,23 @@ class ApproveWriteRequest(BaseModel):
     approved: bool
 
 
-@app.post("/api/run")
+@router.post("/run")
 async def run_agent(req: RunRequest):
-    # HTTP shell: resolve the session id, then delegate the graph run to the
-    # framework-agnostic service. Session handling stays in the adapter.
-    session_id = req.session_id or str(uuid.uuid4())
-    return await run_query(req.user_query, session_id)
+    # HTTP shell: build the per-request context (carries session identity), then
+    # delegate the graph run to the framework-agnostic service. The core boundary
+    # receives the plain session_id value, never the context type.
+    ctx = RequestContext.for_session(req.session_id)
+    return await run_query(req.user_query, ctx.session_id)
 
 
-@app.post("/api/stream")
+@router.post("/stream")
 async def stream_agent(req: StreamRequest):
     """
     SSE endpoint. Streams one event per node completion.
     Each event is a JSON-encoded partial state update.
     Final event has is_complete=True with full result and trace_url.
     """
-    session_id = req.session_id or str(uuid.uuid4())
+    session_id = RequestContext.for_session(req.session_id).session_id
 
     initial_state = {
         "user_query": req.user_query,
@@ -318,7 +326,7 @@ async def stream_agent(req: StreamRequest):
     return EventSourceResponse(event_generator())
 
 
-@app.post("/api/run-sql")
+@router.post("/run-sql")
 async def run_edited_sql(req: RunSQLRequest):
     """Skips generation — validates and executes user-provided SQL directly.
 
@@ -342,7 +350,7 @@ async def run_edited_sql(req: RunSQLRequest):
     from nixus.graph.nodes.classify_chart import classify_chart_node
 
     mini_state = SQLAgentState(
-        user_query="[user-edited SQL]", session_id=req.session_id or str(uuid.uuid4()),
+        user_query="[user-edited SQL]", session_id=RequestContext.for_session(req.session_id).session_id,
         generated_sql=req.sql, correction_attempts=0,
         correction_history=[], completed_nodes=[], stream_updates=[],
         intent_class="READ", extracted_entities=[], requires_approval=False,
@@ -421,7 +429,7 @@ async def _check_llm_connectivity() -> dict:
     return _llm_health_cache.copy()
 
 
-@app.get("/api/health")
+@router.get("/health")
 async def health():
     """Fast health check.
 
@@ -451,11 +459,12 @@ async def health():
     }
 
 
-@app.post("/api/approve-write")
+@router.post("/approve-write")
 async def approve_write(req: ApproveWriteRequest):
     """Resume an interrupted graph with the human's approval decision."""
+    ctx = RequestContext(session_id=req.session_id)
     g = build_graph()
-    config = get_thread_config(req.session_id)
+    config = get_thread_config(ctx.session_id)
     final_state = await g.ainvoke(
         Command(update={"approval_granted": req.approved}, resume=req.approved),
         config=config,
@@ -473,12 +482,12 @@ async def approve_write(req: ApproveWriteRequest):
     }
 
 
-@app.get("/api/cache-stats")
+@router.get("/cache-stats")
 async def cache_stats():
     return await get_cache_stats()
 
 
-@app.post("/api/cache-evict")
+@router.post("/cache-evict")
 async def cache_evict(
     max_age_days: int = 30,
     max_entries: int = 10_000,
@@ -493,6 +502,15 @@ async def cache_evict(
     return {"status": "ok", "evicted": stats}
 
 
-@app.get("/api/fewshot-stats")
+@router.get("/fewshot-stats")
 async def fewshot_stats():
     return await get_fewshot_stats()
+
+
+# Mount every route defined above under /api/v1.
+app.include_router(router)
+
+# Unversioned health alias for infrastructure probes (load balancers, uptime
+# checks) that expect a stable, version-independent path. Same handler as
+# /api/v1/health; this is the only intentionally unversioned route.
+app.add_api_route("/api/health", health, methods=["GET"])
