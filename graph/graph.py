@@ -21,7 +21,7 @@ from graph.nodes.check_result import check_result_node
 from graph.nodes.self_correct import self_correct_node
 from graph.nodes.classify_chart import classify_chart_node
 from graph.nodes.explain_result import explain_result_node
-from safety.approval_gate import safety_check_node
+from nixus.safety.approval_gate import safety_check_node
 
 # LangGraph's AsyncPostgresSaver uses psycopg3 (not asyncpg) and requires
 # the DATABASE_URL in plain `postgresql://` form. Strip any SQLAlchemy driver
