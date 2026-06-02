@@ -4,7 +4,7 @@ Used by FastAPI startup and `python scripts/init_db.py`.
 """
 from sqlalchemy import text
 
-from db.connection import sync_engine
+from nixus.db.connection import sync_engine
 
 INIT_SQL = """
 CREATE EXTENSION IF NOT EXISTS vector;

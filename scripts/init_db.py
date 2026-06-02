@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from db.schema_init import init_database
+from nixus.db.schema_init import init_database
 
 if __name__ == "__main__":
     init_database()

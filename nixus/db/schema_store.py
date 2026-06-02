@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from db.connection import engine
+from nixus.db.connection import engine
 
 
 async def search_schemas(embedding: list, limit: int = 6) -> list:

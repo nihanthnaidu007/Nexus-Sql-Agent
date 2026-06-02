@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from db.fewshot_store import search_fewshots
+from nixus.db.fewshot_store import search_fewshots
 from nixus.utils.embeddings import embed_text
 from graph.state import SQLAgentState
 

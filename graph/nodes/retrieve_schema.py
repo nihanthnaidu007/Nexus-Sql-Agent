@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from db.schema_store import search_schemas
+from nixus.db.schema_store import search_schemas
 from nixus.utils.embeddings import embed_text
 from graph.state import SQLAgentState
 

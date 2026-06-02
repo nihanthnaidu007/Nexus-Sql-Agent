@@ -17,7 +17,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from db.connection import sync_engine
+from nixus.db.connection import sync_engine
 
 BASE_URL = os.environ.get("NIXUS_API_URL", "http://localhost:8000")
 

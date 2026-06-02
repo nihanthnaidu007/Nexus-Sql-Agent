@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from db.connection import engine
+from nixus.db.connection import engine
 from graph.state import SQLAgentState
 
 ROW_FETCH_LIMIT = 1000

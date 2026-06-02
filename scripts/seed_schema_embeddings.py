@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from nixus.utils.embeddings import embed_text
-from db.schema_store import store_schema_embedding, get_schema_count
+from nixus.db.schema_store import store_schema_embedding, get_schema_count
 
 TABLES = [
     {

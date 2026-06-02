@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from nixus.utils.embeddings import embed_texts
-from db.connection import sync_engine as engine
+from nixus.db.connection import sync_engine as engine
 from sqlalchemy import text
 
 EXAMPLES = [

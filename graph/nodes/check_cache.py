@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from db.query_cache import search_cache, increment_hit_count
+from nixus.db.query_cache import search_cache, increment_hit_count
 from nixus.utils.embeddings import embed_text
 from graph.state import SQLAgentState
 

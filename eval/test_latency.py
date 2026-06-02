@@ -25,7 +25,7 @@ import httpx
 from sqlalchemy import text
 
 from eval.conftest import BASE_URL, record_metric
-from db.connection import sync_engine
+from nixus.db.connection import sync_engine
 
 
 # Sample sizes

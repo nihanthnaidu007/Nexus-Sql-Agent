@@ -6,8 +6,8 @@ from langchain_anthropic import ChatAnthropic
 
 load_dotenv()
 
-from db.fewshot_store import store_fewshot_example
-from db.query_cache import store_cache_entry
+from nixus.db.fewshot_store import store_fewshot_example
+from nixus.db.query_cache import store_cache_entry
 from nixus.utils.embeddings import embed_text
 from nixus.utils.confidence import compute_confidence_score
 from nixus.utils.retry import llm_retry

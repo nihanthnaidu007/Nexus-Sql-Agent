@@ -17,9 +17,9 @@ from sse_starlette.sse import EventSourceResponse
 from langgraph.types import Command
 from graph.graph import build_graph, init_checkpointer, aclose_checkpointer
 from graph.state import SQLAgentState
-from db.connection import check_db_connection
-from db.query_cache import get_cache_stats, evict_stale_cache_entries
-from db.fewshot_store import get_fewshot_stats
+from nixus.db.connection import check_db_connection
+from nixus.db.query_cache import get_cache_stats, evict_stale_cache_entries
+from nixus.db.fewshot_store import get_fewshot_stats
 from nixus.utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
 from nixus.utils.sql_safety import is_read_only_sql
 from nixus.utils.logging_config import log_query_start, log_query_complete, log_node_event
@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     `checkpoints` / `checkpoint_writes` / `checkpoint_blobs` tables on first
     run, and evicts stale `query_cache` entries.
     """
-    from db.schema_init import init_database
+    from nixus.db.schema_init import init_database
 
     try:
         await asyncio.to_thread(init_database)
