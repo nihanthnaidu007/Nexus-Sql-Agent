@@ -1,22 +1,22 @@
 {
-  "paraphrase_hits": 0,
+  "paraphrase_hits": 4,
   "paraphrase_total": 5,
-  "paraphrase_hit_rate": 0.0,
-  "unrelated_misses": 4,
+  "paraphrase_hit_rate": 0.8,
+  "unrelated_misses": 0,
   "unrelated_total": 5,
-  "unrelated_miss_rate": 0.8,
+  "unrelated_miss_rate": 0.0,
   "cache_miss_latencies": {
-    "p50": 6923,
-    "p95": 9965,
-    "p99": 10427,
+    "p50": 6846,
+    "p95": 8975,
+    "p99": 9261,
     "samples": 5,
     "cache_hits_observed": 0,
     "timeouts": 0
   },
   "cache_hit_latencies": {
-    "p50": 1426,
-    "p95": 1791,
-    "p99": 1798,
+    "p50": 1498,
+    "p95": 1840,
+    "p99": 1972,
     "samples": 10
   }
 }

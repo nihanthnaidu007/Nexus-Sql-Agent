@@ -1,0 +1,75 @@
+"""Framework-agnostic entry point for running a single NIXUS SQL query.
+
+This is THE function adapters call to run a query end to end. It imports no web
+framework (no FastAPI / Starlette / Streamlit) — the API calls it today; the CLI
+(Phase 7) and the React backend (Phase 8) will call the same function, which is
+the whole point of the rule-1 core boundary.
+
+Extracted verbatim from ``api.main``'s ``POST /api/run`` handler in 1.1f:
+behavior is identical — same initial-state construction, same run config, same
+logging, same ``ainvoke`` on the same module-level compiled graph. The streaming
+(SSE) path deliberately stays in the API for now; it moves here when a non-HTTP
+consumer needs it.
+"""
+import logging
+import time
+
+from nixus.graph.graph import build_graph
+from nixus.graph.state import SQLAgentState
+from nixus.utils.langsmith_config import get_run_config
+from nixus.utils.logging_config import log_query_start, log_query_complete
+
+# Same logger channel the API used for these lines, so log output is unchanged.
+logger = logging.getLogger("nixus_sql.api")
+
+
+def get_thread_config(session_id: str, base_config: dict | None = None) -> dict:
+    """Merge a LangGraph thread_id into the run config so the AsyncPostgresSaver checkpointer can find the checkpoint."""
+    cfg = dict(base_config) if base_config else {}
+    cfg["configurable"] = {**(cfg.get("configurable") or {}), "thread_id": session_id}
+    return cfg
+
+
+async def run_query(user_query: str, session_id: str) -> dict:
+    """Run one query through the compiled graph and return the final state dict.
+
+    ``session_id`` must already be resolved by the caller (the API supplies a
+    uuid default); session handling stays in the adapter. Returns the raw final
+    graph state, exactly as the ``/api/run`` handler previously returned it.
+    """
+    initial_state = SQLAgentState(
+        user_query=user_query,
+        session_id=session_id,
+        intent_class="", extracted_entities=[], requires_approval=False,
+        write_operation_type=None, approval_granted=False,
+        cache_result=None, served_from_cache=False,
+        relevant_schemas=[], schema_context="", tables_identified=[],
+        similar_examples=[], fewshot_context="",
+        generated_sql="",
+        validation_result=None, execution_result=None, result_quality=None,
+        correction_attempts=0, correction_history=[],
+        chart_config=None, explanation="", confidence_score=0.0,
+        current_node="", completed_nodes=[], is_complete=False,
+        trace_id=None, trace_url=None, error=None, stream_updates=[]
+    )
+    config = get_thread_config(session_id, get_run_config(
+        session_id=session_id,
+        user_query=user_query,
+        run_name="nixus-sql-query"
+    ))
+    start = log_query_start(logger, session_id, user_query)
+    final_state = await build_graph().ainvoke(initial_state, config=config)
+    log_query_complete(
+        logger,
+        session_id=session_id,
+        user_query=user_query,
+        intent_class=final_state.get("intent_class", "unknown"),
+        cache_hit=final_state.get("served_from_cache", False),
+        corrections_used=final_state.get("correction_attempts", 0),
+        result_quality=(final_state.get("result_quality") or {}).get("status", "unknown"),
+        row_count=(final_state.get("execution_result") or {}).get("row_count", 0),
+        chart_type=(final_state.get("chart_config") or {}).get("chart_type"),
+        duration_ms=(time.monotonic() - start) * 1000,
+        error=final_state.get("error"),
+    )
+    return final_state
