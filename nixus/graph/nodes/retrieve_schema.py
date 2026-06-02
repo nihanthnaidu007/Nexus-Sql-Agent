@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from nixus.db.schema_store import search_schemas
 from nixus.utils.embeddings import embed_text
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 SCHEMA_TOP_K = int(os.environ.get("SCHEMA_RETRIEVAL_TOP_K", "6"))
 

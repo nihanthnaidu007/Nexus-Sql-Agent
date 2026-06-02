@@ -11,7 +11,7 @@ from nixus.db.query_cache import store_cache_entry
 from nixus.utils.embeddings import embed_text
 from nixus.utils.confidence import compute_confidence_score
 from nixus.utils.retry import llm_retry
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 logger = logging.getLogger(__name__)
 

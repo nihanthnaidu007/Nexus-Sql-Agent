@@ -2,7 +2,7 @@ import json
 import os
 import pandas as pd
 from datetime import datetime
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 try:
     import plotly.express as px

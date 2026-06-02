@@ -15,8 +15,8 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from langgraph.types import Command
-from graph.graph import build_graph, init_checkpointer, aclose_checkpointer
-from graph.state import SQLAgentState
+from nixus.graph.graph import build_graph, init_checkpointer, aclose_checkpointer
+from nixus.graph.state import SQLAgentState
 from nixus.db.connection import check_db_connection
 from nixus.db.query_cache import get_cache_stats, evict_stale_cache_entries
 from nixus.db.fewshot_store import get_fewshot_stats
@@ -375,10 +375,10 @@ async def run_edited_sql(req: RunSQLRequest):
             },
         )
 
-    from graph.nodes.validate_syntax import validate_syntax_node
-    from graph.nodes.execute_query import execute_query_node
-    from graph.nodes.check_result import check_result_node
-    from graph.nodes.classify_chart import classify_chart_node
+    from nixus.graph.nodes.validate_syntax import validate_syntax_node
+    from nixus.graph.nodes.execute_query import execute_query_node
+    from nixus.graph.nodes.check_result import check_result_node
+    from nixus.graph.nodes.classify_chart import classify_chart_node
 
     mini_state = SQLAgentState(
         user_query="[user-edited SQL]", session_id=req.session_id or str(uuid.uuid4()),

@@ -7,7 +7,7 @@ load_dotenv()
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 from typing import Optional
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 from nixus.utils.retry import llm_retry
 
 llm = ChatAnthropic(

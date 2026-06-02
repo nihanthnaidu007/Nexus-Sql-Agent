@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from nixus.db.connection import engine
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 ROW_FETCH_LIMIT = 1000
 QUERY_TIMEOUT_MS = int(os.environ.get("QUERY_TIMEOUT_MS", "30000"))
