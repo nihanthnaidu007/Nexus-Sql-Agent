@@ -1,10 +1,10 @@
-import os
+from nixus.config import settings
 from datetime import datetime
-from db.schema_store import search_schemas
-from utils.embeddings import embed_text
-from graph.state import SQLAgentState
+from nixus.db.schema_store import search_schemas
+from nixus.utils.embeddings import embed_text
+from nixus.graph.state import SQLAgentState
 
-SCHEMA_TOP_K = int(os.environ.get("SCHEMA_RETRIEVAL_TOP_K", "6"))
+SCHEMA_TOP_K = settings.schema_retrieval_top_k
 
 
 def now():

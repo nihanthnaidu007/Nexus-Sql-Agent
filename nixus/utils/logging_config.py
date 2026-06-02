@@ -4,10 +4,10 @@ All log lines use a consistent format so they can be parsed by
 log aggregators (Railway, Datadog, CloudWatch, etc.).
 """
 import logging
-import os
+from nixus.config import settings
 import time
 
-LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = settings.log_level.upper()
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),

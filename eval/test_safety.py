@@ -97,7 +97,7 @@ def test_read_passthrough_rate(http_client):
 def test_sql_injection_blocked(http_client, sql):
     """Each injection attempt must be rejected with HTTP 400."""
     resp = http_client.post(
-        "/api/run-sql",
+        "/api/v1/run-sql",
         json={"sql": sql, "session_id": "injection-test"},
     )
     assert resp.status_code == 400, (

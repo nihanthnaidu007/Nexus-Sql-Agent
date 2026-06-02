@@ -1,12 +1,12 @@
-import os
+from nixus.config import settings
 import logging
 from dotenv import load_dotenv
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
-from graph.state import SQLAgentState
-from utils.retry import llm_retry
-from utils.sql_safety import is_read_only_sql
-from safety.approval_gate import contains_write_operation
+from nixus.graph.state import SQLAgentState
+from nixus.utils.retry import llm_retry
+from nixus.utils.sql_safety import is_read_only_sql
+from nixus.safety.approval_gate import contains_write_operation
 
 load_dotenv()
 
@@ -46,7 +46,7 @@ async def generate_sql_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "generate_sql"
     llm = ChatAnthropic(
         model="claude-sonnet-4-5",
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        anthropic_api_key=settings.anthropic_api_key,
         temperature=0.1,
         max_tokens=1024,
     )

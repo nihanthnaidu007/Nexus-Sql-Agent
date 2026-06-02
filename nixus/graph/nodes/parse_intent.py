@@ -1,4 +1,4 @@
-import os
+from nixus.config import settings
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -7,12 +7,12 @@ load_dotenv()
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
 from typing import Optional
-from graph.state import SQLAgentState
-from utils.retry import llm_retry
+from nixus.graph.state import SQLAgentState
+from nixus.utils.retry import llm_retry
 
 llm = ChatAnthropic(
     model="claude-haiku-4-5",
-    anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+    anthropic_api_key=(settings.anthropic_api_key or ""),
     temperature=0.1,
     max_tokens=512,
 )

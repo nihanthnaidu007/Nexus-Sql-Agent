@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from db.connection import engine
+from nixus.db.connection import engine
 
 
 async def search_schemas(embedding: list, limit: int = 6) -> list:
@@ -74,7 +74,7 @@ async def retrieve_relevant_schemas(query: str, top_k: int = 6) -> list:
     Convenience wrapper used by retrieve_schema_node and ad-hoc tooling
     that wants to go from query string → ranked tables in one call.
     """
-    from utils.embeddings import embed_text
+    from nixus.utils.embeddings import embed_text
 
     embedding = await embed_text(query)
     return await search_schemas(embedding, limit=top_k)

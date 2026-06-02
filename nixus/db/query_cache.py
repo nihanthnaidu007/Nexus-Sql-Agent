@@ -1,6 +1,6 @@
 import json
 from sqlalchemy import text
-from db.connection import engine
+from nixus.db.connection import engine
 
 
 async def search_cache(embedding: list, threshold: float = 0.92) -> dict | None:

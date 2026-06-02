@@ -1,5 +1,5 @@
 from datetime import datetime
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 ROW_FETCH_LIMIT = 1000
 

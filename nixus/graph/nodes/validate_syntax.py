@@ -1,7 +1,7 @@
 import sqlglot
 from sqlglot.errors import ParseError
 from datetime import datetime
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 
 def now():

@@ -1,33 +1,33 @@
-import os
+from nixus.config import settings
 from dotenv import load_dotenv
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 load_dotenv()
 
-MAX_ATTEMPTS = int(os.environ.get("MAX_CORRECTION_ATTEMPTS", "3"))
+MAX_ATTEMPTS = settings.max_correction_attempts
 
-from graph.nodes.parse_intent import parse_intent_node
-from graph.nodes.check_cache import check_cache_node
-from graph.nodes.retrieve_schema import retrieve_schema_node
-from graph.nodes.retrieve_fewshot import retrieve_fewshot_node
-from graph.nodes.generate_sql import generate_sql_node
-from graph.nodes.validate_syntax import validate_syntax_node
-from graph.nodes.execute_query import execute_query_node
-from graph.nodes.check_result import check_result_node
-from graph.nodes.self_correct import self_correct_node
-from graph.nodes.classify_chart import classify_chart_node
-from graph.nodes.explain_result import explain_result_node
-from safety.approval_gate import safety_check_node
+from nixus.graph.nodes.parse_intent import parse_intent_node
+from nixus.graph.nodes.check_cache import check_cache_node
+from nixus.graph.nodes.retrieve_schema import retrieve_schema_node
+from nixus.graph.nodes.retrieve_fewshot import retrieve_fewshot_node
+from nixus.graph.nodes.generate_sql import generate_sql_node
+from nixus.graph.nodes.validate_syntax import validate_syntax_node
+from nixus.graph.nodes.execute_query import execute_query_node
+from nixus.graph.nodes.check_result import check_result_node
+from nixus.graph.nodes.self_correct import self_correct_node
+from nixus.graph.nodes.classify_chart import classify_chart_node
+from nixus.graph.nodes.explain_result import explain_result_node
+from nixus.safety.approval_gate import safety_check_node
 
 # LangGraph's AsyncPostgresSaver uses psycopg3 (not asyncpg) and requires
 # the DATABASE_URL in plain `postgresql://` form. Strip any SQLAlchemy driver
 # suffix so it works regardless of how DATABASE_URL was configured.
 _pg_url = (
-    os.environ.get("DATABASE_URL", "")
+    (settings.database_url or "")
     .replace("postgresql+asyncpg://", "postgresql://")
     .replace("postgresql+psycopg2://", "postgresql://")
     .replace("postgres://", "postgresql://", 1)

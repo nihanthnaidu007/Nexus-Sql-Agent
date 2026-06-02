@@ -14,8 +14,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from utils.sql_formatter import highlight_sql, format_sql_pretty
-from utils.confidence import confidence_badge
+from nixus.utils.sql_formatter import highlight_sql, format_sql_pretty
+from nixus.utils.confidence import confidence_badge
 
 API_BASE = os.environ.get("API_BASE_URL", "http://localhost:8000")
 
@@ -513,7 +513,7 @@ if "pending_approval" not in st.session_state:
 @st.cache_data(ttl=60)
 def get_health():
     try:
-        r = requests.get(f"{API_BASE}/api/health", timeout=3)
+        r = requests.get(f"{API_BASE}/api/v1/health", timeout=3)
         return r.json()
     except Exception:
         return {"status": "error", "db_connected": False}
@@ -522,8 +522,8 @@ def get_health():
 @st.cache_data(ttl=30)
 def get_stats():
     try:
-        cache_r = requests.get(f"{API_BASE}/api/cache-stats", timeout=3)
-        fewshot_r = requests.get(f"{API_BASE}/api/fewshot-stats", timeout=3)
+        cache_r = requests.get(f"{API_BASE}/api/v1/cache-stats", timeout=3)
+        fewshot_r = requests.get(f"{API_BASE}/api/v1/fewshot-stats", timeout=3)
         return cache_r.json(), fewshot_r.json()
     except Exception:
         return {"entries": 0, "total_hits": 0, "hit_rate": 0}, {"total": 0, "seeded": 0, "auto_learned": 0}
@@ -531,11 +531,11 @@ def get_stats():
 
 def run_query_streaming(user_query: str, session_id: str):
     """
-    Calls /api/stream and yields partial state dicts as each SSE event arrives.
+    Calls /api/v1/stream and yields partial state dicts as each SSE event arrives.
     Each yielded dict represents one node completing.
     Final dict has is_complete=True.
     """
-    url = f"{API_BASE}/api/stream"
+    url = f"{API_BASE}/api/v1/stream"
 
     try:
         with requests.post(
@@ -803,7 +803,7 @@ if st.session_state.pending_approval:
             with st.spinner("Resuming execution with approval..."):
                 try:
                     resp = requests.post(
-                        f"{API_BASE}/api/approve-write",
+                        f"{API_BASE}/api/v1/approve-write",
                         json={"session_id": st.session_state.session_id, "approved": True},
                         timeout=60
                     )
@@ -819,7 +819,7 @@ if st.session_state.pending_approval:
             with st.spinner("Resuming execution with denial..."):
                 try:
                     resp = requests.post(
-                        f"{API_BASE}/api/approve-write",
+                        f"{API_BASE}/api/v1/approve-write",
                         json={"session_id": st.session_state.session_id, "approved": False},
                         timeout=60
                     )
@@ -912,7 +912,7 @@ if st.session_state.result:
                     with st.spinner("Executing edited SQL..."):
                         try:
                             resp2 = requests.post(
-                                f"{API_BASE}/api/run-sql",
+                                f"{API_BASE}/api/v1/run-sql",
                                 json={"sql": st.session_state.edited_sql,
                                       "session_id": st.session_state.session_id},
                                 timeout=30

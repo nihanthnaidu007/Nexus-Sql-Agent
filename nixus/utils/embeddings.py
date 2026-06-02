@@ -1,12 +1,12 @@
-import os
+from nixus.config import settings
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-from utils.retry import embedding_retry
+from nixus.utils.retry import embedding_retry
 
 load_dotenv()
 
-_async_client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+_async_client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536

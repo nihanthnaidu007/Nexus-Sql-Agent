@@ -25,7 +25,7 @@ import httpx
 from sqlalchemy import text
 
 from eval.conftest import BASE_URL, record_metric
-from db.connection import sync_engine
+from nixus.db.connection import sync_engine
 
 
 # Sample sizes
@@ -128,7 +128,7 @@ def _percentile(sorted_values: list[float], p: float) -> float:
 def _timed_run(client: httpx.Client, question: str) -> tuple[float, dict]:
     t0 = time.monotonic()
     resp = client.post(
-        "/api/run",
+        "/api/v1/run",
         json={"user_query": question, "session_id": str(uuid.uuid4())},
     )
     ms = (time.monotonic() - t0) * 1000

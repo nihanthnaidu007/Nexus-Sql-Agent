@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv()
 
-from utils.embeddings import embed_texts
-from db.connection import sync_engine as engine
+from nixus.utils.embeddings import embed_texts
+from nixus.db.connection import sync_engine as engine
 from sqlalchemy import text
 
 EXAMPLES = [

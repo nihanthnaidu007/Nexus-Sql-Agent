@@ -1,28 +1,30 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-import os
+from nixus.config import settings
 import uuid
 import asyncio
 import json
 import logging
 import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from langgraph.types import Command
-from graph.graph import build_graph, init_checkpointer, aclose_checkpointer
-from graph.state import SQLAgentState
-from db.connection import check_db_connection
-from db.query_cache import get_cache_stats, evict_stale_cache_entries
-from db.fewshot_store import get_fewshot_stats
-from utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
-from utils.sql_safety import is_read_only_sql
-from utils.logging_config import log_query_start, log_query_complete, log_node_event
+from nixus.graph.graph import build_graph, init_checkpointer, aclose_checkpointer
+from nixus.graph.state import SQLAgentState
+from nixus.db.connection import check_db_connection
+from nixus.db.query_cache import get_cache_stats, evict_stale_cache_entries
+from nixus.db.fewshot_store import get_fewshot_stats
+from nixus.utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
+from nixus.utils.sql_safety import is_read_only_sql
+from nixus.utils.logging_config import log_query_start, log_query_complete, log_node_event
+from nixus.services.query_service import run_query, get_thread_config
+from api.context import RequestContext
 
 logger = logging.getLogger("nixus_sql.api")
 
@@ -35,7 +37,7 @@ async def lifespan(app: FastAPI):
     `checkpoints` / `checkpoint_writes` / `checkpoint_blobs` tables on first
     run, and evicts stale `query_cache` entries.
     """
-    from db.schema_init import init_database
+    from nixus.db.schema_init import init_database
 
     try:
         await asyncio.to_thread(init_database)
@@ -51,8 +53,8 @@ async def lifespan(app: FastAPI):
 
     try:
         eviction_stats = await evict_stale_cache_entries(
-            max_age_days=int(os.environ.get("CACHE_MAX_AGE_DAYS", "30")),
-            max_entries=int(os.environ.get("CACHE_MAX_ENTRIES", "10000")),
+            max_age_days=settings.cache_max_age_days,
+            max_entries=settings.cache_max_entries,
         )
         logger.info(f"Cache eviction on startup: {eviction_stats}")
     except Exception:
@@ -68,7 +70,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="NIXUS SQL API", version="1.0.0", lifespan=lifespan)
 
-_raw_origins = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8501,http://localhost:3000")
+_raw_origins = settings.allowed_origins
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 
 app.add_middleware(
@@ -78,6 +80,12 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+# All endpoints are served under the versioned /api/v1 prefix (stable contract
+# for the UI, the future React frontend, and external consumers). The router is
+# mounted on the app at the bottom of this module, after every route is defined.
+# Health is additionally aliased at the unversioned /api/health for infra probes.
+router = APIRouter(prefix="/api/v1")
 
 
 @app.exception_handler(Exception)
@@ -128,62 +136,23 @@ class ApproveWriteRequest(BaseModel):
     approved: bool
 
 
-def get_thread_config(session_id: str, base_config: dict | None = None) -> dict:
-    """Merge a LangGraph thread_id into the run config so the AsyncPostgresSaver checkpointer can find the checkpoint."""
-    cfg = dict(base_config) if base_config else {}
-    cfg["configurable"] = {**(cfg.get("configurable") or {}), "thread_id": session_id}
-    return cfg
-
-
-@app.post("/api/run")
+@router.post("/run")
 async def run_agent(req: RunRequest):
-    session_id = req.session_id or str(uuid.uuid4())
-    initial_state = SQLAgentState(
-        user_query=req.user_query,
-        session_id=session_id,
-        intent_class="", extracted_entities=[], requires_approval=False,
-        write_operation_type=None, approval_granted=False,
-        cache_result=None, served_from_cache=False,
-        relevant_schemas=[], schema_context="", tables_identified=[],
-        similar_examples=[], fewshot_context="",
-        generated_sql="",
-        validation_result=None, execution_result=None, result_quality=None,
-        correction_attempts=0, correction_history=[],
-        chart_config=None, explanation="", confidence_score=0.0,
-        current_node="", completed_nodes=[], is_complete=False,
-        trace_id=None, trace_url=None, error=None, stream_updates=[]
-    )
-    config = get_thread_config(session_id, get_run_config(
-        session_id=session_id,
-        user_query=req.user_query,
-        run_name="nixus-sql-query"
-    ))
-    start = log_query_start(logger, session_id, req.user_query)
-    final_state = await build_graph().ainvoke(initial_state, config=config)
-    log_query_complete(
-        logger,
-        session_id=session_id,
-        user_query=req.user_query,
-        intent_class=final_state.get("intent_class", "unknown"),
-        cache_hit=final_state.get("served_from_cache", False),
-        corrections_used=final_state.get("correction_attempts", 0),
-        result_quality=(final_state.get("result_quality") or {}).get("status", "unknown"),
-        row_count=(final_state.get("execution_result") or {}).get("row_count", 0),
-        chart_type=(final_state.get("chart_config") or {}).get("chart_type"),
-        duration_ms=(time.monotonic() - start) * 1000,
-        error=final_state.get("error"),
-    )
-    return final_state
+    # HTTP shell: build the per-request context (carries session identity), then
+    # delegate the graph run to the framework-agnostic service. The core boundary
+    # receives the plain session_id value, never the context type.
+    ctx = RequestContext.for_session(req.session_id)
+    return await run_query(req.user_query, ctx.session_id)
 
 
-@app.post("/api/stream")
+@router.post("/stream")
 async def stream_agent(req: StreamRequest):
     """
     SSE endpoint. Streams one event per node completion.
     Each event is a JSON-encoded partial state update.
     Final event has is_complete=True with full result and trace_url.
     """
-    session_id = req.session_id or str(uuid.uuid4())
+    session_id = RequestContext.for_session(req.session_id).session_id
 
     initial_state = {
         "user_query": req.user_query,
@@ -357,7 +326,7 @@ async def stream_agent(req: StreamRequest):
     return EventSourceResponse(event_generator())
 
 
-@app.post("/api/run-sql")
+@router.post("/run-sql")
 async def run_edited_sql(req: RunSQLRequest):
     """Skips generation — validates and executes user-provided SQL directly.
 
@@ -375,13 +344,13 @@ async def run_edited_sql(req: RunSQLRequest):
             },
         )
 
-    from graph.nodes.validate_syntax import validate_syntax_node
-    from graph.nodes.execute_query import execute_query_node
-    from graph.nodes.check_result import check_result_node
-    from graph.nodes.classify_chart import classify_chart_node
+    from nixus.graph.nodes.validate_syntax import validate_syntax_node
+    from nixus.graph.nodes.execute_query import execute_query_node
+    from nixus.graph.nodes.check_result import check_result_node
+    from nixus.graph.nodes.classify_chart import classify_chart_node
 
     mini_state = SQLAgentState(
-        user_query="[user-edited SQL]", session_id=req.session_id or str(uuid.uuid4()),
+        user_query="[user-edited SQL]", session_id=RequestContext.for_session(req.session_id).session_id,
         generated_sql=req.sql, correction_attempts=0,
         correction_history=[], completed_nodes=[], stream_updates=[],
         intent_class="READ", extracted_entities=[], requires_approval=False,
@@ -415,7 +384,7 @@ async def run_edited_sql(req: RunSQLRequest):
 
 # Module-level LLM connectivity cache — avoids burning tokens on every probe.
 _llm_health_cache: dict = {"status": "unknown", "checked_at": 0.0}
-LLM_HEALTH_CACHE_TTL = int(os.environ.get("LLM_HEALTH_CACHE_TTL", "300"))  # 5 minutes
+LLM_HEALTH_CACHE_TTL = settings.llm_health_cache_ttl  # 5 minutes
 
 
 async def _check_llm_connectivity() -> dict:
@@ -460,7 +429,7 @@ async def _check_llm_connectivity() -> dict:
     return _llm_health_cache.copy()
 
 
-@app.get("/api/health")
+@router.get("/health")
 async def health():
     """Fast health check.
 
@@ -490,11 +459,12 @@ async def health():
     }
 
 
-@app.post("/api/approve-write")
+@router.post("/approve-write")
 async def approve_write(req: ApproveWriteRequest):
     """Resume an interrupted graph with the human's approval decision."""
+    ctx = RequestContext(session_id=req.session_id)
     g = build_graph()
-    config = get_thread_config(req.session_id)
+    config = get_thread_config(ctx.session_id)
     final_state = await g.ainvoke(
         Command(update={"approval_granted": req.approved}, resume=req.approved),
         config=config,
@@ -512,12 +482,12 @@ async def approve_write(req: ApproveWriteRequest):
     }
 
 
-@app.get("/api/cache-stats")
+@router.get("/cache-stats")
 async def cache_stats():
     return await get_cache_stats()
 
 
-@app.post("/api/cache-evict")
+@router.post("/cache-evict")
 async def cache_evict(
     max_age_days: int = 30,
     max_entries: int = 10_000,
@@ -532,6 +502,15 @@ async def cache_evict(
     return {"status": "ok", "evicted": stats}
 
 
-@app.get("/api/fewshot-stats")
+@router.get("/fewshot-stats")
 async def fewshot_stats():
     return await get_fewshot_stats()
+
+
+# Mount every route defined above under /api/v1.
+app.include_router(router)
+
+# Unversioned health alias for infrastructure probes (load balancers, uptime
+# checks) that expect a stable, version-independent path. Same handler as
+# /api/v1/health; this is the only intentionally unversioned route.
+app.add_api_route("/api/health", health, methods=["GET"])

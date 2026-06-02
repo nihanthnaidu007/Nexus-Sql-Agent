@@ -1,10 +1,10 @@
 import json
-import os
+from nixus.config import settings
 from dotenv import load_dotenv
 from datetime import datetime
 from langchain_anthropic import ChatAnthropic
-from graph.state import SQLAgentState
-from utils.retry import llm_retry
+from nixus.graph.state import SQLAgentState
+from nixus.utils.retry import llm_retry
 
 load_dotenv()
 
@@ -44,7 +44,7 @@ async def self_correct_node(state: SQLAgentState) -> SQLAgentState:
     state["current_node"] = "self_correct"
     llm = ChatAnthropic(
         model="claude-sonnet-4-5",
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        anthropic_api_key=(settings.anthropic_api_key or ""),
         temperature=0.1,
         max_tokens=1024,
     )

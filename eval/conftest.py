@@ -17,7 +17,7 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from db.connection import sync_engine
+from nixus.db.connection import sync_engine
 
 BASE_URL = os.environ.get("NIXUS_API_URL", "http://localhost:8000")
 
@@ -99,7 +99,7 @@ def _probe_api(url: str, timeout: float = 10.0) -> bool:
     returns False instead of raising, so callers can skip cleanly."""
     try:
         with httpx.Client(base_url=url, timeout=timeout) as client:
-            return client.get("/api/health").status_code == 200
+            return client.get("/api/v1/health").status_code == 200
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, OSError):
         return False
 
@@ -147,14 +147,14 @@ def http_client(infra_status: _InfraStatus):
 def run_query(client: httpx.Client, question: str, session_id: str | None = None) -> dict:
     """POST /api/run and return the final state dict."""
     sid = session_id or str(uuid.uuid4())
-    resp = client.post("/api/run", json={"user_query": question, "session_id": sid})
+    resp = client.post("/api/v1/run", json={"user_query": question, "session_id": sid})
     resp.raise_for_status()
     return resp.json()
 
 
 def run_sql(client: httpx.Client, sql: str) -> dict:
     """POST /api/run-sql and return the mini-state dict."""
-    resp = client.post("/api/run-sql", json={"sql": sql, "session_id": str(uuid.uuid4())})
+    resp = client.post("/api/v1/run-sql", json={"sql": sql, "session_id": str(uuid.uuid4())})
     resp.raise_for_status()
     return resp.json()
 
@@ -163,7 +163,7 @@ def run_query_timed(client: httpx.Client, question: str) -> tuple[dict, float]:
     """POST /api/run and return (state, latency_ms)."""
     sid = str(uuid.uuid4())
     t0 = time.monotonic()
-    resp = client.post("/api/run", json={"user_query": question, "session_id": sid})
+    resp = client.post("/api/v1/run", json={"user_query": question, "session_id": sid})
     latency_ms = (time.monotonic() - t0) * 1000
     resp.raise_for_status()
     return resp.json(), latency_ms

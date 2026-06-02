@@ -1,8 +1,8 @@
 import json
-import os
+from nixus.config import settings
 import pandas as pd
 from datetime import datetime
-from graph.state import SQLAgentState
+from nixus.graph.state import SQLAgentState
 
 try:
     import plotly.express as px
@@ -133,7 +133,7 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
         # - It has few enough categories to be readable as slices
         # - All values are positive (negatives make no sense in a pie)
         # - Row count is small enough to be readable
-        PIE_MAX_SLICES = int(os.environ.get("PIE_MAX_SLICES", "6"))
+        PIE_MAX_SLICES = settings.pie_max_slices
 
         is_distribution = (
             not is_ranked
