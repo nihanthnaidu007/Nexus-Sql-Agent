@@ -92,6 +92,7 @@ class SQLAgentState(TypedDict):
     fewshot_context: str
     generated_sql: str
     validation_result: Optional[dict]
+    grounding_result: Optional[dict]
     execution_result: Optional[dict]
     result_quality: Optional[dict]
     correction_attempts: int
