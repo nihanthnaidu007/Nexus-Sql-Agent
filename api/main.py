@@ -461,7 +461,7 @@ async def health():
         "llm_last_checked": llm_health.get("checked_at", 0),
         "nodes": [
             "parse_intent", "safety_check", "check_cache", "retrieve_schema", "retrieve_fewshot",
-            "generate_sql", "validate_syntax", "execute_query", "check_result",
+            "generate_sql", "validate_syntax", "verify_grounding", "execute_query", "check_result",
             "self_correct", "classify_chart", "explain_result"
         ],
         "version": "1.0.0"

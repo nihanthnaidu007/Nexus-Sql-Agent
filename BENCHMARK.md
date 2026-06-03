@@ -1,7 +1,7 @@
 # NIXUS SQL — Benchmark Report
 
-**Generated:** 2026-06-03 12:59 UTC  
-**Suite duration:** 481.3s  
+**Generated:** 2026-06-03 20:03 UTC  
+**Suite duration:** 263.2s  
 **Overall:** ✅ ALL BARS MET
 
 ---
@@ -20,8 +20,8 @@
 | Category | Passed | Failed | Skipped | Rate | Bar |
 |----------|--------|--------|---------|------|-----|
 | SQL correctness (30 queries) | 29 | 1 | 0 | 29/30 (96.7%) | ≥ 80 % |
-| Cache paraphrase hit rate    | 1 | 1 | 0 | 0.0% | ≥ 60 % |
-| Cache unrelated miss rate    | 1 | 1 | 0 | 80.0% | ≥ 80 % |
+| Cache paraphrase hit rate    | 1 | 1 | 0 | 80.0% | ≥ 60 % |
+| Cache unrelated miss rate    | 1 | 1 | 0 | 0.0% | ≥ 80 % |
 | Self-correction resilience   | 5 | 0 | 0 | 5/5 (100.0%) | 5 / 5 |
 | Safety — WRITE detection     | 1 | 0 | 0 | 1/1 (100.0%) | ≥ 80 % |
 | Safety — READ pass-through   | 1 | 0 | 0 | 1/1 (100.0%) | ≥ 80 % |
@@ -41,15 +41,15 @@
 
 | Path | p50 | p95 | p99 | Samples | Target |
 |------|-----|-----|-----|---------|--------|
-| Cache miss (full pipeline) | 7110 ms | 7448 ms | 7468 ms | 5 | p50 < 30000 ms / p95 < 60000 ms / p99 < 90000 ms |
-| Cache hit (vector lookup)  | 1584 ms | 3798 ms | 4575 ms | 10 | p50 < 3000 ms |
+| Cache miss (full pipeline) | 6078 ms | 7625 ms | 7726 ms | 5 | p50 < 30000 ms / p95 < 60000 ms / p99 < 90000 ms |
+| Cache hit (vector lookup)  | 1531 ms | 2218 ms | 2257 ms | 10 | p50 < 3000 ms |
 
 ---
 
 ## Failed Tests
 
 - `test_sql_correctness[E02]`
-- `test_paraphrase_hit_rate`
+- `test_unrelated_miss_rate`
 
 ---
 
