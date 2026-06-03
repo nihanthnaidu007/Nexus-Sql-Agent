@@ -5,6 +5,52 @@ the harness-repair before/after and the benchmark numbers captured on a fully
 seeded local stack. Distinct from `BENCHMARK.md` (the auto-rendered benchmark
 report); this file is the human-authored baseline of record.
 
+## Committed baseline — Phase 2.4 (2026-06-03): **51 passed / 2 failed / 53 total**
+
+Phase 2 made introspection the **only** schema source: the handwritten Chinook
+description seed (`scripts/seed_schema_embeddings.py`) and the `schema_source`
+switch are gone; `schema_embeddings` is now populated purely by introspecting
+the read-only target db (`python -m nixus.schema.reembed`), and the generation
+prompts (`generate_sql.py`, `self_correct.py`) are table-agnostic — no Chinook
+names. Chinook is now just one database NIXUS understands through the generic
+path.
+
+**New committed baseline: 51 passed / 2 failed / 53 total** (was 50/3/53).
+**`D05` now PASSES**: introspection emits foreign-key join sentences in the
+schema context (`Customer.SupportRepId references Employee.EmployeeId`), and a
+generic, table-agnostic prompt rule ("when the question is about an entity
+referenced by a foreign-key id, join to the referenced table and select its
+name/label columns rather than the raw id") restores the guidance the old
+Chinook-primed prompt had been carrying — so the generator now joins to
+`Employee` and returns rep names instead of `SupportRepId` integers.
+
+The **2 remaining failures** are product-accuracy edge cases, not regressions:
+1. `test_sql_correctness[E02]` — column-shape overlap (correct values, extra
+   columns reduce the text-fingerprint overlap). Schema-independent. **Owner: Phase 6.**
+2. The cache-accuracy artifact (`test_cache_accuracy::test_paraphrase_hit_rate`
+   on a cold cache, or `test_unrelated_miss_rate` on a warm one) — a semantic
+   cache threshold sensitivity, not a SQL-correctness defect.
+
+Regression floor for Phase 2+ is **51 passed**; `D05` passing is the guard.
+
+### FLAG — few-shot cold-start (unresolved, out of scope for Phase 2)
+
+Schema embeddings are now produced generically for any database via
+introspection, but **few-shot examples are not**: a freshly-ingested user
+database has introspected schema embeddings yet **zero** few-shot examples until
+the system learns some at runtime. The Chinook few-shot pairs
+(`scripts/seed_fewshot_examples.py`, intentionally **kept**) remain valid only
+because Chinook is still the demo target. How to seed or bootstrap few-shot for
+an arbitrary user database — or whether the generator should run example-free
+until it self-learns — is **unresolved and deferred to a later phase**. Recorded
+here so it is not lost.
+
+---
+
+> The Phase 0 baseline below is preserved as the historical record of when the
+> harness was first stabilized; its 50/3/53 numbers predate the Phase 2 schema
+> rework above.
+
 ## Run context
 
 | Field | Value |

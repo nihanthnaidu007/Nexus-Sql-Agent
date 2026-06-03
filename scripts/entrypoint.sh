@@ -22,14 +22,16 @@ PYEOF
 echo "◈ Initializing database schema + vector tables..."
 python scripts/init_db.py
 
-echo "◈ Seeding schema embeddings (skip if exists)..."
-python scripts/seed_schema_embeddings.py --skip-if-exists
-
 echo "◈ Seeding few-shot examples (skip if exists)..."
 python scripts/seed_fewshot_examples.py --skip-if-exists
 
-echo "◈ Loading Chinook sample data (skip if already present)..."
+echo "◈ Loading Chinook sample data into target (skip if already present)..."
 python scripts/migrate_chinook.py --skip-if-exists
+
+# Schema embeddings are produced by introspecting the target db, so this MUST run
+# AFTER the target tables exist (after migrate_chinook).
+echo "◈ Embedding target schema via introspection (skip if exists)..."
+python -m nixus.schema.reembed --skip-if-exists
 
 echo "◈ Starting NIXUS SQL API on :8000 ..."
 exec uvicorn api.main:app --host 0.0.0.0 --port 8000

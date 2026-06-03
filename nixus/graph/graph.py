@@ -23,11 +23,12 @@ from nixus.graph.nodes.classify_chart import classify_chart_node
 from nixus.graph.nodes.explain_result import explain_result_node
 from nixus.safety.approval_gate import safety_check_node
 
-# LangGraph's AsyncPostgresSaver uses psycopg3 (not asyncpg) and requires
-# the DATABASE_URL in plain `postgresql://` form. Strip any SQLAlchemy driver
-# suffix so it works regardless of how DATABASE_URL was configured.
+# The LangGraph checkpointer is NIXUS-owned bookkeeping → STATE database.
+# AsyncPostgresSaver uses psycopg3 (not asyncpg) and requires the URL in plain
+# `postgresql://` form. Strip any SQLAlchemy driver suffix so it works regardless
+# of how the state URL was configured.
 _pg_url = (
-    (settings.database_url or "")
+    (settings.state_url or "")
     .replace("postgresql+asyncpg://", "postgresql://")
     .replace("postgresql+psycopg2://", "postgresql://")
     .replace("postgres://", "postgresql://", 1)

@@ -17,7 +17,9 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from nixus.db.connection import sync_engine
+# sync_engine -> state_db (liveness probe). sync_target_engine -> target_db
+# (read-only): gold queries read the user's data, which now lives in target_db.
+from nixus.db.connection import sync_engine, sync_target_engine
 
 BASE_URL = os.environ.get("NIXUS_API_URL", "http://localhost:8000")
 
@@ -170,8 +172,18 @@ def run_query_timed(client: httpx.Client, question: str) -> tuple[dict, float]:
 
 
 def run_gold_sql(sql: str) -> list:
-    """Execute a gold SQL query against the DB using the sync engine."""
-    with sync_engine.connect() as conn:
+    """Execute a gold SQL query against the TARGET database (read-only).
+
+    Gold queries read the user's data (Chinook), which lives in target_db — the
+    same database the API executes the generated SQL against. Running gold SQL
+    here through the read-only target engine keeps the comparison apples-to-apples
+    and proves the data is reachable via the read-only role.
+    """
+    if sync_target_engine is None:
+        raise RuntimeError(
+            "TARGET_DATABASE_URL not set — cannot run gold SQL against target_db."
+        )
+    with sync_target_engine.connect() as conn:
         result = conn.execute(text(sql))
         return result.fetchall()
 

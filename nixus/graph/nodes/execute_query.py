@@ -3,7 +3,10 @@ import time
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from nixus.db.connection import engine
+# The GENERATED SQL runs against the user's data → TARGET database, through the
+# read-only role. NIXUS never writes here; Postgres rejects any write at this
+# connection. All NIXUS bookkeeping stays on the state database.
+from nixus.db.connection import get_target_engine
 from nixus.graph.state import SQLAgentState
 
 ROW_FETCH_LIMIT = 1000
@@ -20,7 +23,7 @@ async def execute_query_node(state: SQLAgentState) -> SQLAgentState:
     start = time.monotonic()
 
     try:
-        async with engine.connect() as conn:
+        async with get_target_engine().connect() as conn:
             # Set statement timeout at the session level for this connection.
             # This is enforced by PostgreSQL itself, not by the driver.
             # If the query exceeds QUERY_TIMEOUT_MS, PostgreSQL cancels it

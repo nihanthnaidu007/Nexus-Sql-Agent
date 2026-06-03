@@ -1,12 +1,13 @@
 import json
 from sqlalchemy import text
-from nixus.db.connection import engine
+# query_cache is NIXUS-owned bookkeeping → STATE database (read + write).
+from nixus.db.connection import state_engine
 
 
 async def search_cache(embedding: list, threshold: float = 0.92) -> dict | None:
     """Async semantic cache lookup."""
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
-    async with engine.connect() as conn:
+    async with state_engine.connect() as conn:
         row = await conn.execute(text("""
             SELECT
                 id,
@@ -47,7 +48,7 @@ async def search_cache(embedding: list, threshold: float = 0.92) -> dict | None:
 
 
 async def increment_hit_count(cache_id: int) -> None:
-    async with engine.begin() as conn:
+    async with state_engine.begin() as conn:
         await conn.execute(text("""
             UPDATE query_cache
             SET hit_count = hit_count + 1,
@@ -67,7 +68,7 @@ async def store_cache_entry(
     explanation: str,
 ) -> None:
     vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
-    async with engine.begin() as conn:
+    async with state_engine.begin() as conn:
         await conn.execute(text("""
             INSERT INTO query_cache (
                 user_query, query_embedding, generated_sql,
@@ -104,7 +105,7 @@ async def evict_stale_cache_entries(
     ttl_evicted = 0
     lru_evicted = 0
 
-    async with engine.begin() as conn:
+    async with state_engine.begin() as conn:
         ttl_result = await conn.execute(
             text("""
                 DELETE FROM query_cache
@@ -138,7 +139,7 @@ async def evict_stale_cache_entries(
 
 
 async def get_cache_stats() -> dict:
-    async with engine.connect() as conn:
+    async with state_engine.connect() as conn:
         row = await conn.execute(text("""
             SELECT
                 COUNT(*) AS entries,

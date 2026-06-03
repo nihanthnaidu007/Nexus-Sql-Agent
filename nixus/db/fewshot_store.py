@@ -1,5 +1,6 @@
 from sqlalchemy import text
-from nixus.db.connection import engine
+# fewshot_examples is NIXUS-owned bookkeeping (read + LEARN) → STATE database.
+from nixus.db.connection import state_engine
 
 
 async def search_fewshots(
@@ -9,7 +10,7 @@ async def search_fewshots(
 ) -> list:
     """Async pgvector similarity search on fewshot_examples."""
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
-    async with engine.connect() as conn:
+    async with state_engine.connect() as conn:
         rows = await conn.execute(text("""
             SELECT
                 natural_language,
@@ -51,7 +52,7 @@ async def _is_duplicate(
     not semantically similar but distinct queries.
     """
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
-    async with engine.connect() as conn:
+    async with state_engine.connect() as conn:
         result = await conn.execute(
             text("""
                 SELECT 1
@@ -84,7 +85,7 @@ async def store_fewshot_example(
     vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
     query_type = _infer_query_type(sql_query)
 
-    async with engine.begin() as conn:
+    async with state_engine.begin() as conn:
         await conn.execute(text("""
             INSERT INTO fewshot_examples
                 (natural_language, sql_query, tables_used,
@@ -117,7 +118,7 @@ def _infer_query_type(sql: str) -> str:
 
 
 async def get_fewshot_stats() -> dict:
-    async with engine.connect() as conn:
+    async with state_engine.connect() as conn:
         row = await conn.execute(text("""
             SELECT
                 COUNT(*) AS total,

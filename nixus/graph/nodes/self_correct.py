@@ -16,9 +16,7 @@ ORIGINAL QUESTION: {user_query}
 DATABASE SCHEMA:
 {schema_context}
 
-CRITICAL REMINDER: ALL table and column names use PascalCase and MUST be double-quoted in PostgreSQL.
-Correct: "Artist", "ArtistId", "Track", "TrackId", "InvoiceLine", "PlaylistTrack", "MediaType"
-Wrong:   Artist, artist, ArtistId, Track, track, TrackId (any unquoted form)
+CRITICAL REMINDER: Quote every table and column identifier EXACTLY as it appears in the DATABASE SCHEMA above, preserving its case. Identifiers shown in mixed-case or uppercase are case-sensitive in PostgreSQL and MUST be double-quoted; an unquoted or wrong-case identifier is a common cause of "column/relation does not exist" errors. The FAILURE REASON below often names the offending identifier — match it to the exact spelling and quoting shown in the schema.
 
 FAILED SQL (attempt {attempt}):
 {failed_sql}

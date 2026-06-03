@@ -40,11 +40,29 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    # ── Database ────────────────────────────────────────────────────────────
-    # Old: db.connection -> os.environ.get("DATABASE_URL") (None), then raises
-    # RuntimeError if falsy. graph.graph -> os.environ.get("DATABASE_URL", "").
-    # Field mirrors the bare read (None); the ""-defaulting site applies `or ""`.
-    database_url: Optional[str] = Field(default=None)
+    # ── Database (split into two connections in 2.1) ────────────────────────
+    # NIXUS now talks to TWO databases:
+    #   - state_db  (READ-WRITE): NIXUS-owned bookkeeping — schema_embeddings,
+    #     fewshot_examples, query_cache, schema_migrations, and the LangGraph
+    #     checkpointer tables.
+    #   - target_db (STRICTLY READ-ONLY): the user's data. The generated SQL is
+    #     executed here through a Postgres role that holds only SELECT.
+    #
+    # ``STATE_DATABASE_URL`` is the canonical name; the historical
+    # ``DATABASE_URL`` is still honored as a fallback so existing .env files keep
+    # working. ``state_url`` resolves the two. Both default to None (the bare
+    # read); ``nixus.db.connection`` enforces required-ness via its RuntimeError
+    # guard, exactly as before.
+    state_database_url: Optional[str] = Field(default=None)   # STATE_DATABASE_URL
+    database_url: Optional[str] = Field(default=None)         # DATABASE_URL (legacy → state)
+
+    # Read-only handle the APP uses for the target database. Never written to.
+    target_database_url: Optional[str] = Field(default=None)  # TARGET_DATABASE_URL
+
+    # Writable OWNER connection to the target database, used ONLY by the one-time
+    # Chinook seed / provisioning scripts (never by the app at runtime). The app's
+    # only handle to the target is the read-only ``target_database_url`` above.
+    target_admin_database_url: Optional[str] = Field(default=None)  # TARGET_ADMIN_DATABASE_URL
 
     # ── LLM API keys ────────────────────────────────────────────────────────
     # Reads varied across sites: .get("ANTHROPIC_API_KEY") -> None and
@@ -91,6 +109,26 @@ class Settings(BaseSettings):
     def tracing_enabled(self) -> bool:
         """Mirror of `os.environ.get("LANGCHAIN_TRACING_V2","false").lower()=="true"`."""
         return self.langchain_tracing_v2.lower() == "true"
+
+    # ── Resolved DB URLs ────────────────────────────────────────────────────
+    @property
+    def state_url(self) -> Optional[str]:
+        """The state (NIXUS-owned, read-write) DB URL.
+
+        Prefers ``STATE_DATABASE_URL``; falls back to the legacy ``DATABASE_URL``
+        so existing .env files keep working unchanged.
+        """
+        return self.state_database_url or self.database_url
+
+    @property
+    def target_url(self) -> Optional[str]:
+        """The target (user data, READ-ONLY) DB URL used by the app."""
+        return self.target_database_url
+
+    @property
+    def target_admin_url(self) -> Optional[str]:
+        """Writable OWNER URL to the target DB — bootstrap/seed scripts only."""
+        return self.target_admin_database_url
 
 
 # Single module-level instance imported by every call site. Reads the
