@@ -60,11 +60,11 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Cache eviction on startup failed; continuing anyway")
 
-    # Advisory schema-drift check (2.3): compare the live target structure to what
-    # is embedded and log if they diverge. Non-fatal; never auto-reembeds.
+    # Advisory schema-drift check: compare the live target structure to what is
+    # embedded (via introspection) and log if they diverge. Non-fatal; never
+    # auto-reembeds.
     try:
         from nixus.schema.drift import log_drift_at_startup
-        logger.info("Schema source: %s", settings.schema_source)
         await log_drift_at_startup(get_target_engine(), get_state_engine())
     except Exception:
         logger.exception("Schema drift check setup failed; continuing anyway")

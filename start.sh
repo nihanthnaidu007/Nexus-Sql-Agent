@@ -10,8 +10,8 @@ fi
 echo "◈ Initializing database..."
 python scripts/init_db.py
 
-echo "◈ Seeding schema embeddings (skip if exists)..."
-python scripts/seed_schema_embeddings.py --skip-if-exists
+echo "◈ Embedding target schema via introspection (skip if exists)..."
+python -m nixus.schema.reembed --skip-if-exists
 
 echo "◈ Seeding few-shot examples (skip if exists)..."
 python scripts/seed_fewshot_examples.py --skip-if-exists

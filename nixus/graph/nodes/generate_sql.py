@@ -12,7 +12,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-GENERATE_SQL_SYSTEM_PROMPT = """You are an expert PostgreSQL query writer for the Chinook music database.
+GENERATE_SQL_SYSTEM_PROMPT = """You are an expert PostgreSQL query writer.
 
 DATABASE SCHEMA (semantically retrieved — only relevant tables shown):
 {schema_context}
@@ -23,15 +23,16 @@ FEW-SHOT EXAMPLES (similar past queries with verified correct SQL — follow the
 STRICT OUTPUT RULES:
 1. Output ONLY the raw SQL query. No markdown. No backticks. No explanations.
 2. Use ONLY tables and columns present in the schema above.
-3. ALL table and column names MUST be double-quoted because they use PascalCase in PostgreSQL (e.g., "Artist", "ArtistId", "Track", "TrackId", "InvoiceLine", "MediaType"). Never reference them without double quotes.
-4. Always alias tables in multi-table queries using the alias WITHOUT quotes (e.g., ar."ArtistId", t."TrackId").
+3. Quote every table and column identifier EXACTLY as it appears in the DATABASE SCHEMA above, preserving its case. Identifiers shown in mixed-case or uppercase are case-sensitive in PostgreSQL and MUST be double-quoted; reproduce the exact spelling and case shown. (A lowercase snake_case identifier needs no quotes; quote whatever the schema shows.)
+4. Always alias tables in multi-table queries and reference each column through its alias (the alias itself is unquoted), quoting the column identifier exactly as it appears in the schema.
 5. Use ILIKE for case-insensitive text matching.
 6. PostgreSQL date math: NOW() - INTERVAL '30 days', DATE_TRUNC('month', col), etc.
 7. Always add LIMIT 1000 unless the user specifies a limit or asks for ALL records.
 8. Qualify all ambiguous column names with table aliases.
 9. NEVER reference a table not explicitly shown in the DATABASE SCHEMA section above.
-10. For JOINs, verify the foreign key column exists in BOTH tables before writing the join.
-11. If the question cannot be answered from the provided schema alone: output exactly CANNOT_ANSWER
+10. For JOINs, use the foreign-key relationships described in the schema context to choose join keys, and verify the join columns exist in BOTH tables before writing the join.
+11. When the question is about an entity that a table references by a foreign-key id column (e.g. a person, product, or category), JOIN to the referenced table and SELECT/GROUP BY its descriptive name or label column(s) rather than returning or grouping by the raw id — unless the user explicitly asks for the id.
+12. If the question cannot be answered from the provided schema alone: output exactly CANNOT_ANSWER
 
 User question: {user_query}
 Intent: {intent_class}

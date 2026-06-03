@@ -18,7 +18,6 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nixus.config import settings
 from nixus.db.schema_store import replace_schema_embeddings
 from nixus.schema.introspect import introspect_schema
 from nixus.schema.models import Table
@@ -84,7 +83,7 @@ async def embed_target_schema(target_engine: AsyncEngine, state_engine: AsyncEng
 
     written = await replace_schema_embeddings(rows)
     logger.info(
-        "Embedded target schema via introspection: %d tables -> %d rows (schema_source=%s).",
-        len(schema.tables), written, settings.schema_source,
+        "Embedded target schema via introspection: %d tables -> %d rows.",
+        len(schema.tables), written,
     )
     return written

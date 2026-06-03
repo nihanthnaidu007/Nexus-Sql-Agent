@@ -6,11 +6,9 @@ structural comparison (table and column NAMES), never a re-embed. It REPORTS and
 ADVISES; it never auto-reembeds (embeddings cost API calls — that is the user's
 call) and never crashes the app.
 
-Mode: drift is authoritative for the introspection path (the embedded structure
-came from the same introspection, so names line up). For the handwritten path the
-embedded columns_json is a hand-curated SUBSET of the real columns, so structural
-differences are EXPECTED — the report is then marked ``advisory`` so its output is
-read as informational only.
+Since introspection is the only schema source, the embedded structure came from
+the same introspection path, so the comparison is always authoritative: a drift
+means the target has genuinely changed since the last re-embed.
 """
 from __future__ import annotations
 
@@ -20,7 +18,6 @@ import logging
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from nixus.config import settings
 from nixus.db.schema_store import list_schema_rows
 from nixus.schema.introspect import introspect_schema
 from nixus.schema.render import qualified_name
@@ -32,8 +29,6 @@ REEMBED_COMMAND = "python -m nixus.schema.reembed"
 
 class DriftReport(BaseModel):
     in_sync: bool
-    schema_source: str
-    advisory: bool                                   # True when not authoritative (handwritten)
     added_tables: list[str] = Field(default_factory=list)     # live has, store lacks
     removed_tables: list[str] = Field(default_factory=list)   # store has, live lacks
     added_columns: list[str] = Field(default_factory=list)    # "table.column" live has, store lacks
@@ -65,8 +60,6 @@ def _embedded_columns(columns_json: str) -> set[str]:
 
 async def detect_drift(target_engine: AsyncEngine, state_engine: AsyncEngine) -> DriftReport:
     """Compare the live target structure against the embedded structure."""
-    advisory = settings.schema_source != "introspection"
-
     live_schema = await introspect_schema(target_engine)
     live = {qualified_name(t): {c.name for c in t.columns} for t in live_schema.tables}
 
@@ -90,8 +83,6 @@ async def detect_drift(target_engine: AsyncEngine, state_engine: AsyncEngine) ->
 
     return DriftReport(
         in_sync=in_sync,
-        schema_source=settings.schema_source,
-        advisory=advisory,
         added_tables=added_tables,
         removed_tables=removed_tables,
         added_columns=added_columns,
@@ -110,11 +101,10 @@ async def log_drift_at_startup(target_engine: AsyncEngine, state_engine: AsyncEn
         return
 
     if report.in_sync:
-        logger.info("Schema drift check: in sync (schema_source=%s).", report.schema_source)
+        logger.info("Schema drift check: target in sync with embeddings.")
         return
 
-    label = "advisory, handwritten path" if report.advisory else "introspection path"
     logger.warning(
-        "Schema drift detected (%s): %s. %s",
-        label, report.summary(), report.recommendation or "",
+        "Schema drift detected: %s. %s",
+        report.summary(), report.recommendation or "",
     )

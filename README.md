@@ -202,8 +202,7 @@ nexus-sql-agent/
 │   └── approval_gate.py           # safety_check_node + contains_write_operation regex
 ├── scripts/
 │   ├── init_db.py                 # Idempotent DB setup: pgvector extension + all tables
-│   ├── migrate_chinook.py         # Loads Chinook data from JSON source; --skip-if-exists / --force
-│   ├── seed_schema_embeddings.py  # Embeds and stores Chinook table descriptions
+│   ├── migrate_chinook.py         # Loads Chinook data into the target db; --skip-if-exists / --force
 │   ├── seed_fewshot_examples.py   # Seeds initial query-SQL training examples
 │   ├── dev.sh                     # Local dev launcher: API + Streamlit
 │   └── entrypoint.sh              # Docker entrypoint: wait → init → seed → start API
@@ -275,10 +274,10 @@ docker-compose up --build
 `scripts/entrypoint.sh` runs inside the `api` container and executes this sequence automatically:
 
 1. Waits for the database to accept connections (up to 30 retries × 2 s)
-2. Runs `init_db.py` — creates the pgvector extension, vector tables, and Chinook DDL
-3. Runs `seed_schema_embeddings.py --skip-if-exists` — embeds all 11 Chinook table schemas
-4. Runs `seed_fewshot_examples.py --skip-if-exists` — loads initial query-SQL training examples
-5. Runs `migrate_chinook.py --skip-if-exists` — loads Chinook sample data from JSON
+2. Runs `init_db.py` — creates the pgvector extension and vector tables (state db)
+3. Runs `seed_fewshot_examples.py --skip-if-exists` — loads initial query-SQL training examples
+4. Runs `migrate_chinook.py --skip-if-exists` — loads Chinook sample data into the target db
+5. Runs `python -m nixus.schema.reembed --skip-if-exists` — embeds the target schema by introspecting it (runs after the target tables exist)
 6. Starts the FastAPI server with `exec uvicorn api.main:app` on port 8000
 
 The Streamlit UI is started by a separate `ui` service defined in `docker-compose.yml` on port 8501. Both services start together with `docker-compose up`.
@@ -312,7 +311,8 @@ python scripts/migrate_chinook.py
 # Force re-seed (truncates and re-inserts all data):
 # python scripts/migrate_chinook.py --force
 
-python scripts/seed_schema_embeddings.py
+# Embed the target schema by introspecting it (run AFTER Chinook data is loaded):
+python -m nixus.schema.reembed
 python scripts/seed_fewshot_examples.py
 
 # 6. Start API and UI
