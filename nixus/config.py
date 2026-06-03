@@ -64,6 +64,19 @@ class Settings(BaseSettings):
     # only handle to the target is the read-only ``target_database_url`` above.
     target_admin_database_url: Optional[str] = Field(default=None)  # TARGET_ADMIN_DATABASE_URL
 
+    # ── Schema source switch (TEMPORARY — added in 2.3, removed in 2.4) ──────
+    # Selects which path populates schema_embeddings, so the introspection path
+    # can be measured against the handwritten baseline before the old path is
+    # removed:
+    #   "handwritten"   -> scripts/seed_schema_embeddings.py (the current default;
+    #                      keeps committed behavior unchanged).
+    #   "introspection" -> nixus.schema.embed.embed_target_schema (the new
+    #                      introspect->render->embed->write pipeline; run via
+    #                      `python -m nixus.schema.reembed`).
+    # Default is the safe existing behavior. This field goes away in 2.4 when
+    # introspection becomes the only path.
+    schema_source: str = Field(default="handwritten")     # SCHEMA_SOURCE
+
     # ── LLM API keys ────────────────────────────────────────────────────────
     # Reads varied across sites: .get("ANTHROPIC_API_KEY") -> None and
     # .get("ANTHROPIC_API_KEY", "") -> "". Field mirrors the bare read (None);

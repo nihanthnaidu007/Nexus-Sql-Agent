@@ -17,7 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 from langgraph.types import Command
 from nixus.graph.graph import build_graph, init_checkpointer, aclose_checkpointer
 from nixus.graph.state import SQLAgentState
-from nixus.db.connection import check_db_connection
+from nixus.db.connection import check_db_connection, get_state_engine, get_target_engine
 from nixus.db.query_cache import get_cache_stats, evict_stale_cache_entries
 from nixus.db.fewshot_store import get_fewshot_stats
 from nixus.utils.langsmith_config import get_run_config, get_trace_url, is_tracing_enabled
@@ -59,6 +59,15 @@ async def lifespan(app: FastAPI):
         logger.info(f"Cache eviction on startup: {eviction_stats}")
     except Exception:
         logger.exception("Cache eviction on startup failed; continuing anyway")
+
+    # Advisory schema-drift check (2.3): compare the live target structure to what
+    # is embedded and log if they diverge. Non-fatal; never auto-reembeds.
+    try:
+        from nixus.schema.drift import log_drift_at_startup
+        logger.info("Schema source: %s", settings.schema_source)
+        await log_drift_at_startup(get_target_engine(), get_state_engine())
+    except Exception:
+        logger.exception("Schema drift check setup failed; continuing anyway")
 
     yield
 
