@@ -1,7 +1,7 @@
 # NIXUS SQL — Benchmark Report
 
-**Generated:** 2026-06-03 16:03 UTC  
-**Suite duration:** 252.3s  
+**Generated:** 2026-06-03 20:03 UTC  
+**Suite duration:** 263.2s  
 **Overall:** ✅ ALL BARS MET
 
 ---
@@ -41,8 +41,8 @@
 
 | Path | p50 | p95 | p99 | Samples | Target |
 |------|-----|-----|-----|---------|--------|
-| Cache miss (full pipeline) | 7599 ms | 10976 ms | 11318 ms | 5 | p50 < 30000 ms / p95 < 60000 ms / p99 < 90000 ms |
-| Cache hit (vector lookup)  | 1733 ms | 2138 ms | 2181 ms | 10 | p50 < 3000 ms |
+| Cache miss (full pipeline) | 6078 ms | 7625 ms | 7726 ms | 5 | p50 < 30000 ms / p95 < 60000 ms / p99 < 90000 ms |
+| Cache hit (vector lookup)  | 1531 ms | 2218 ms | 2257 ms | 10 | p50 < 3000 ms |
 
 ---
 

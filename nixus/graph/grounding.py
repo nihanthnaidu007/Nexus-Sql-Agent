@@ -36,12 +36,28 @@ from nixus.schema.models import IntrospectedSchema
 class SchemaView:
     """Authoritative table -> columns map for grounding.
 
-    Keyed by lower-cased table name -> the table's original-case column names.
-    Same-named tables across schemas are merged (union of columns), which only
-    makes verification MORE permissive — the false-positive-safe direction.
+    Keyed by table name -> the table's column names. TABLE KEYS are normalized to
+    lower case on construction, so a caller that hand-builds with original-case
+    keys (e.g. ``{'Track': ...}``) behaves IDENTICALLY to lower-cased keys — the
+    type cannot be silently misused. Same-named tables (after normalization) are
+    merged (union of columns), which only makes verification MORE permissive — the
+    false-positive-safe direction.
+
+    COLUMN-NAME CASE IS PRESERVED. Postgres preserves the case of quoted
+    identifiers, and ``column_exists`` compares case-insensitively, so columns are
+    stored exactly as introspected and matched without case sensitivity (the
+    semantics CHECK 4 relied on). Only the TABLE key is normalized.
     """
 
     tables: dict[str, set[str]]
+
+    def __post_init__(self) -> None:
+        # Normalize table keys to lower case at construction (merging any keys
+        # that collide once folded). Frozen dataclass → assign via object.
+        normalized: dict[str, set[str]] = {}
+        for name, cols in self.tables.items():
+            normalized.setdefault(name.lower(), set()).update(cols)
+        object.__setattr__(self, "tables", normalized)
 
     def has_table(self, name: str) -> bool:
         return name.lower() in self.tables
