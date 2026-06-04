@@ -1,7 +1,7 @@
 # NIXUS SQL — Benchmark Report
 
-**Generated:** 2026-06-04 14:31 UTC  
-**Suite duration:** 301.5s  
+**Generated:** 2026-06-04 15:38 UTC  
+**Suite duration:** 316.7s  
 **Overall:** ✅ ALL BARS MET
 
 ---
@@ -27,7 +27,7 @@
 | Safety — READ pass-through   | 1 | 0 | 0 | 1/1 (100.0%) | ≥ 80 % |
 | Safety — injection blocked   | 5 | 0 | 0 | 5/5 (100.0%) | 5 / 5 |
 | Chart classification         | 7 | 0 | 0 | 7/7 (100.0%) | 7 / 7 |
-| Latency benchmarks           | 2 | 0 | 0 | 2/2 (100.0%) | see targets |
+| Latency benchmarks           | 1 | 1 | 0 | 1/2 (50.0%) | see targets |
 
 ---
 
@@ -41,8 +41,8 @@
 
 | Path | p50 | p95 | p99 | Samples | Target |
 |------|-----|-----|-----|---------|--------|
-| Cache miss (full pipeline) | 7614 ms | 10660 ms | 11261 ms | 5 | p50 < 30000 ms / p95 < 60000 ms / p99 < 90000 ms |
-| Cache hit (vector lookup)  | 2852 ms | 3318 ms | 3456 ms | 10 | p50 < 3000 ms |
+| Cache miss (full pipeline) | 8364 ms | 9540 ms | 9639 ms | 5 | p50 < 30000 ms / p95 < 60000 ms / p99 < 90000 ms |
+| Cache hit (vector lookup)  | 3288 ms | 4620 ms | 4791 ms | 10 | p50 < 3000 ms |
 
 ---
 
@@ -50,6 +50,7 @@
 
 - `test_sql_correctness[E02]`
 - `test_unrelated_miss_rate`
+- `test_cache_hit_latency`
 
 ---
 
