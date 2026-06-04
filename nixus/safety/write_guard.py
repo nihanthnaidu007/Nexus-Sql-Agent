@@ -1,9 +1,13 @@
 import re
-from datetime import datetime
 
 
 # These patterns match the start of any SQL statement that modifies data or schema.
 # They are intentionally conservative — false positives are safe, false negatives are not.
+#
+# This is the regex defense-in-depth guard used by generate_sql to reject any
+# non-SELECT statement the LLM might emit. NIXUS is read-only; write *requests*
+# are refused upstream at the scope gate, and any write SQL that still slips
+# through generation is blocked here (alongside the sqlglot AST check).
 _WRITE_PATTERNS = re.compile(
     r"""
     ^\s*                        # optional leading whitespace
@@ -40,34 +44,3 @@ def contains_write_operation(sql: str) -> tuple[bool, str]:
     if match:
         return True, match.group(0).strip()
     return False, ""
-
-
-def now():
-    return datetime.now().strftime("%H:%M:%S")
-
-
-async def safety_check_node(state) -> dict:
-    state["current_node"] = "safety_check"
-    operation = state.get("write_operation_type") or "WRITE"
-    approved = state.get("approval_granted", False)
-
-    if approved:
-        state["stream_updates"].append({
-            "timestamp": now(), "node": "safety_check",
-            "message": f"{operation} operation approved",
-            "status": "done",
-        })
-    else:
-        state["approval_granted"] = False
-        state["error"] = (
-            f"⚠ {operation} operation blocked — "
-            f"approval was denied or timed out."
-        )
-        state["stream_updates"].append({
-            "timestamp": now(), "node": "safety_check",
-            "message": f"{operation} operation denied",
-            "status": "error",
-        })
-
-    state["completed_nodes"].append("safety_check")
-    return state

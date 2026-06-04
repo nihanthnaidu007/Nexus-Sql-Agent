@@ -506,8 +506,13 @@ if "partial_state" not in st.session_state:
     st.session_state.partial_state = {}
 if "trigger_run" not in st.session_state:
     st.session_state.trigger_run = False
-if "pending_approval" not in st.session_state:
-    st.session_state.pending_approval = None
+# Stateless clarification conversation state (Option B). `clarify` holds the
+# pending clarifying question + accumulated context; `clarify_followup` queues a
+# follow-up run carrying the user's answer.
+if "clarify" not in st.session_state:
+    st.session_state.clarify = None
+if "clarify_followup" not in st.session_state:
+    st.session_state.clarify_followup = None
 
 
 @st.cache_data(ttl=60)
@@ -529,18 +534,28 @@ def get_stats():
         return {"entries": 0, "total_hits": 0, "hit_rate": 0}, {"total": 0, "seeded": 0, "auto_learned": 0}
 
 
-def run_query_streaming(user_query: str, session_id: str):
+def run_query_streaming(user_query: str, session_id: str,
+                        clarification_context: dict | None = None,
+                        clarification_round: int = 0):
     """
     Calls /api/v1/stream and yields partial state dicts as each SSE event arrives.
     Each yielded dict represents one node completing.
     Final dict has is_complete=True.
+
+    ``clarification_context`` / ``clarification_round`` carry the stateless
+    clarification round-trip; both are omitted for a normal first-turn query.
     """
     url = f"{API_BASE}/api/v1/stream"
+
+    payload = {"user_query": user_query, "session_id": session_id}
+    if clarification_context is not None:
+        payload["clarification_context"] = clarification_context
+        payload["clarification_round"] = clarification_round
 
     try:
         with requests.post(
             url,
-            json={"user_query": user_query, "session_id": session_id},
+            json=payload,
             stream=True,
             timeout=120,
             headers={"Accept": "text/event-stream"}
@@ -629,7 +644,7 @@ def render_intelligence_strip(state: dict):
 def render_node_status(state: dict):
     """Renders the state machine node badges from any state dict."""
     ALL_NODES = [
-        "parse_intent", "safety_check", "check_cache", "retrieve_schema",
+        "scope_classifier", "parse_intent", "check_cache", "retrieve_schema",
         "retrieve_fewshot", "generate_sql", "validate_syntax", "execute_query",
         "check_result", "self_correct", "classify_chart", "explain_result"
     ]
@@ -718,18 +733,31 @@ col_run, col_spacer = st.columns([1, 5])
 with col_run:
     run_clicked = st.button("▶ RUN QUERY", use_container_width=True)
 
-# ── Streaming run handler ───────────────────────────────────────────────────
-if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
+# ── Streaming run handler (fresh query OR clarification follow-up) ───────────
+followup = st.session_state.get("clarify_followup")
+fresh = (run_clicked or st.session_state.get("trigger_run")) and user_query.strip()
+
+if followup or fresh:
+    if followup:
+        run_q = followup["user_query"]
+        clar_ctx = followup["clarification_context"]
+        clar_round = followup["clarification_round"]
+    else:
+        run_q = user_query
+        clar_ctx = None
+        clar_round = 0
+        st.session_state.clarify = None        # a fresh question starts a new conversation
+        st.session_state.last_query = user_query
+
+    st.session_state.clarify_followup = None
     st.session_state.trigger_run = False
     st.session_state.show_chart = False
     st.session_state.edit_sql_mode = False
     st.session_state.result = None
-    st.session_state.pending_approval = None
     st.session_state.streaming = True
-    st.session_state.last_query = user_query
     st.session_state.partial_state = {
         "completed_nodes": [],
-        "current_node": "parse_intent",
+        "current_node": "scope_classifier",
         "stream_updates": [],
         "intent_class": "",
         "extracted_entities": [],
@@ -754,16 +782,10 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
     intel_placeholder = st.empty()
     status_placeholder = st.empty()
 
-    for partial in run_query_streaming(user_query, st.session_state.session_id):
+    for partial in run_query_streaming(run_q, st.session_state.session_id, clar_ctx, clar_round):
         if partial.get("error") and not partial.get("is_complete"):
             st.session_state.partial_state.update(partial)
             continue
-
-        # WRITE interrupt — graph paused waiting for approval
-        if partial.get("_event_type") == "interrupted":
-            st.session_state.pending_approval = partial
-            st.session_state.streaming = False
-            break
 
         st.session_state.partial_state.update(partial)
 
@@ -776,59 +798,53 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
         if partial.get("is_complete"):
             st.session_state.result = partial
             st.session_state.streaming = False
+            # Set up (or clear) the clarification conversation based on outcome.
+            if partial.get("outcome") == "NEEDS_CLARIFICATION":
+                prior = list((clar_ctx or {}).get("prior_clarifications") or [])
+                st.session_state.clarify = {
+                    "original_question": (clar_ctx or {}).get("original_question") or run_q,
+                    "prior_clarifications": prior,
+                    "pending_question": partial.get("clarifying_question") or "Could you clarify?",
+                }
+            else:
+                st.session_state.clarify = None
             break
 
     st.rerun()
 
-# ── Write approval modal ────────────────────────────────────────────────────
-if st.session_state.pending_approval:
-    pa = st.session_state.pending_approval
-    operation = pa.get("write_operation_type", "WRITE")
 
+# ── Clarification round-trip panel (stateless follow-up) ────────────────────
+if st.session_state.get("clarify"):
+    c = st.session_state.clarify
+    round_no = len(c["prior_clarifications"]) + 1
     st.markdown(f"""
-    <div class="approval-modal">
-        <div class="approval-modal-title">⚠ WRITE OPERATION REQUIRES APPROVAL</div>
-        <div class="approval-modal-sub">
-            The agent has generated a <strong>{html.escape(operation)}</strong> statement.
-            NIXUS SQL requires explicit human approval before executing any write operation.
-            Review the intent, then approve or deny below.
+    <div class="safety-warning" style="border-color:var(--cyan);background:rgba(0,229,255,0.06);">
+        <div style="font-family:'Syne',sans-serif;color:var(--cyan);font-size:1rem;font-weight:800;margin-bottom:8px;">
+            ◈ NEED A LITTLE MORE DETAIL &nbsp;·&nbsp; clarification {round_no} of 2
         </div>
-        <div class="approval-operation">{html.escape(operation)}</div>
+        <div style="font-family:'Outfit',sans-serif;color:var(--text-secondary);font-size:0.92rem;">
+            {html.escape(c["pending_question"])}
+        </div>
     </div>
     """, unsafe_allow_html=True)
-
-    col_approve, col_deny, _ = st.columns([1, 1, 4])
-    with col_approve:
-        if st.button("✓ APPROVE", use_container_width=True):
-            with st.spinner("Resuming execution with approval..."):
-                try:
-                    resp = requests.post(
-                        f"{API_BASE}/api/v1/approve-write",
-                        json={"session_id": st.session_state.session_id, "approved": True},
-                        timeout=60
-                    )
-                    result = resp.json()
-                    st.session_state.result = result
-                    st.session_state.pending_approval = None
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
-
-    with col_deny:
-        if st.button("✕ DENY", use_container_width=True):
-            with st.spinner("Resuming execution with denial..."):
-                try:
-                    resp = requests.post(
-                        f"{API_BASE}/api/v1/approve-write",
-                        json={"session_id": st.session_state.session_id, "approved": False},
-                        timeout=60
-                    )
-                    result = resp.json()
-                    st.session_state.result = result
-                    st.session_state.pending_approval = None
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
+    clar_answer = st.text_input(
+        "Your answer", key="clarify_answer_input",
+        placeholder="Add the detail the question asks for…",
+        label_visibility="collapsed",
+    )
+    if st.button("➤ SEND ANSWER", key="clarify_send") and clar_answer.strip():
+        prior = c["prior_clarifications"] + [
+            {"question": c["pending_question"], "answer": clar_answer.strip()}
+        ]
+        st.session_state.clarify_followup = {
+            "user_query": clar_answer.strip(),
+            "clarification_context": {
+                "original_question": c["original_question"],
+                "prior_clarifications": prior,
+            },
+            "clarification_round": len(prior),
+        }
+        st.rerun()
 
 
 # ── Intelligence strip + results ────────────────────────────────────────────
@@ -842,14 +858,20 @@ if st.session_state.result:
     with col_nodes:
         render_node_status(r)
 
-    # ── Error / WRITE safety card ──────────────────────────────────────────
+    # ── Error / scope-refusal card ─────────────────────────────────────────
+    _REFUSAL_HEADINGS = {
+        "REFUSED_WRITE": "◈ READ-ONLY — WRITE NOT PERMITTED",
+        "REFUSED_OUT_OF_SCOPE": "◈ OUT OF SCOPE",
+        "REFUSED_AMBIGUOUS": "◈ COULDN'T DETERMINE THE QUESTION",
+    }
     if r.get("error"):
         error_msg = html.escape(r["error"])
-        if "operation blocked" in r["error"] or "approval was denied" in r["error"]:
+        heading = _REFUSAL_HEADINGS.get(r.get("outcome"))
+        if heading:
             st.markdown(f"""
             <div class="safety-warning">
                 <div style="font-family:'Syne',sans-serif;color:var(--red);font-size:1rem;font-weight:800;margin-bottom:8px;">
-                    ⚠ WRITE OPERATION BLOCKED
+                    {heading}
                 </div>
                 <div style="font-family:'Outfit',sans-serif;color:var(--text-secondary);font-size:0.85rem;">
                     {error_msg}
@@ -1012,8 +1034,10 @@ if st.session_state.result:
         )
 
     # ── Insight card ──────────────────────────────────────────────────────
+    # Only for answered queries — clarification questions and refusal reasons
+    # are surfaced by their own panels, not as a data "insight".
     explanation = r.get("explanation", "")
-    if explanation:
+    if explanation and r.get("outcome", "ANSWERED") == "ANSWERED":
         trace_url = r.get("trace_url")
         trace_id = r.get("trace_id")
         if trace_url:

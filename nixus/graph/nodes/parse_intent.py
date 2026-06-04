@@ -6,7 +6,6 @@ load_dotenv()
 
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel
-from typing import Optional
 from nixus.graph.state import SQLAgentState
 from nixus.utils.retry import llm_retry
 
@@ -21,15 +20,15 @@ llm = ChatAnthropic(
 class IntentResult(BaseModel):
     intent_class: str
     extracted_entities: list
-    write_operation_type: Optional[str] = None
     reasoning: str
 
 
+# Write requests are refused upstream at the scope gate (NIXUS is read-only), so
+# parse_intent only distinguishes the read-side intents that inform generation.
 PARSE_PROMPT = """Classify this natural language database query.
 
 intent_class options:
 - READ: wants to SELECT / retrieve data
-- WRITE: wants to INSERT, UPDATE, DELETE, or DROP data
 - SCHEMA_QUESTION: asking about table structure, column names
 - AMBIGUOUS: unclear intent
 
@@ -39,9 +38,8 @@ Query: {user_query}
 
 Respond ONLY with valid JSON matching this schema. No markdown, no backticks:
 {{
-  "intent_class": "READ|WRITE|SCHEMA_QUESTION|AMBIGUOUS",
+  "intent_class": "READ|SCHEMA_QUESTION|AMBIGUOUS",
   "extracted_entities": ["entity1", "entity2"],
-  "write_operation_type": null,
   "reasoning": "one sentence"
 }}"""
 
@@ -62,8 +60,6 @@ async def parse_intent_node(state: SQLAgentState) -> SQLAgentState:
 
     state["intent_class"] = result.intent_class
     state["extracted_entities"] = result.extracted_entities
-    state["write_operation_type"] = result.write_operation_type
-    state["requires_approval"] = result.intent_class == "WRITE"
     state["completed_nodes"].append("parse_intent")
     state["stream_updates"].append({
         "timestamp": now(), "node": "parse_intent",
