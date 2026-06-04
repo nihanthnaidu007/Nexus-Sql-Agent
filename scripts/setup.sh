@@ -31,7 +31,9 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 # ── 2. .env + required keys (no echo, no commit) ────────────────────────────
-if [ ! -f .env ]; then
+if [ -f .env ]; then
+  say ".env already exists — leaving it untouched (your keys are safe)."
+else
   cp .env.example .env
   say "Created .env from .env.example (gitignored — never committed)."
 fi

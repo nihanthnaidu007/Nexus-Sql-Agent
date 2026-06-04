@@ -15,7 +15,8 @@ API keys (an OpenAI key for schema embeddings, an Anthropic key for the agent).
 scripts/setup.sh
 
 # …or manually:
-cp .env.example .env        # then set OPENAI_API_KEY + ANTHROPIC_API_KEY in .env
+[ -f .env ] || cp .env.example .env   # only if you don't already have a .env; then
+                                      # set OPENAI_API_KEY + ANTHROPIC_API_KEY in .env
 docker compose up -d --build
 ```
 
@@ -35,7 +36,7 @@ nixus query "which organization has the most users?"      # a real result
 
 ```bash
 docker compose down -v                 # wipe volumes — your deliberate action
-cp .env.example .env                   # set the two API keys in .env
+[ -f .env ] || cp .env.example .env    # only if you have no .env; then set the two keys
 docker compose up -d --build           # provisions, seeds, embeds, boots — automatically
 ```
 

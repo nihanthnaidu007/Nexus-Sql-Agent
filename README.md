@@ -259,8 +259,8 @@ nexus-sql-agent/
 git clone <repo-url>
 cd nexus-sql-agent
 
-# 2. Create environment file
-cp .env.example .env
+# 2. Create environment file (only if you don't already have one — never clobber real keys)
+[ -f .env ] || cp .env.example .env
 # Edit .env with your API keys (see Environment Variables section below)
 
 # 3. Start everything (database + API + UI)
@@ -295,8 +295,8 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Set environment variables
-cp .env.example .env
+# 4. Set environment variables (only if you don't already have a .env)
+[ -f .env ] || cp .env.example .env
 # Edit .env with your credentials
 
 # 5. Initialize database and seed data

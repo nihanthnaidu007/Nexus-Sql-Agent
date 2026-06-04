@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from nixus.config import settings
+from nixus.config import settings, is_placeholder
 import uuid
 import asyncio
 import json
@@ -428,19 +428,28 @@ async def _check_llm_connectivity() -> dict:
     anthropic_ok = False
     openai_ok = False
 
-    try:
-        import anthropic as _anthropic
-        _anthropic.Anthropic().models.list(limit=1)
-        anthropic_ok = True
-    except Exception as e:
-        logger.warning(f"Anthropic health check failed: {type(e).__name__}: {e}")
+    # A placeholder/empty key is reported NOT connected WITHOUT any API call.
+    # This is the exact false-confidence case the clean bring-up exposed:
+    # health said connected while every call 401'd (7.2 amendment, defect C).
+    if is_placeholder(settings.anthropic_api_key):
+        logger.info("Anthropic key not configured (placeholder) — reporting not connected.")
+    else:
+        try:
+            import anthropic as _anthropic
+            _anthropic.Anthropic().models.list(limit=1)
+            anthropic_ok = True
+        except Exception as e:
+            logger.warning(f"Anthropic health check failed: {type(e).__name__}: {e}")
 
-    try:
-        from openai import AsyncOpenAI as _OAI
-        await _OAI().models.list()
-        openai_ok = True
-    except Exception as e:
-        logger.warning(f"OpenAI health check failed: {type(e).__name__}: {e}")
+    if is_placeholder(settings.openai_api_key):
+        logger.info("OpenAI key not configured (placeholder) — reporting not connected.")
+    else:
+        try:
+            from openai import AsyncOpenAI as _OAI
+            await _OAI().models.list()
+            openai_ok = True
+        except Exception as e:
+            logger.warning(f"OpenAI health check failed: {type(e).__name__}: {e}")
 
     _llm_health_cache.update({
         "anthropic_connected": anthropic_ok,
