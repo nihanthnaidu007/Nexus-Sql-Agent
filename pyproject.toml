@@ -1,0 +1,27 @@
+# Packaging metadata — added in Phase 7.1 for ONE reason: to register the `nixus`
+# console-script entry point so `nixus query "..."` works after install.
+#
+# Runtime dependencies are intentionally NOT declared here. They are managed by
+# requirements.txt / requirements.lock (both unchanged). Install the console
+# script into an env that already has the requirements with:
+#
+#     pip install -e . --no-deps
+#
+# For dev use without installing, every command also runs via the module path:
+#
+#     python -m nixus.cli query "how many tracks are there?"
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nixus"
+version = "0.1.0"
+description = "NIXUS — grounded natural-language SQL agent"
+requires-python = ">=3.10"
+
+[project.scripts]
+nixus = "nixus.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["nixus*"]

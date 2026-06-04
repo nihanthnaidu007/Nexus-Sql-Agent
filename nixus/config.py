@@ -21,10 +21,29 @@ Intentionally NOT folded in (adapter-process-local, not shared app config):
   - the retired Chinook migration script's vars (scripts/migrate_chinook.py).
 See the 1.1e report for the rationale.
 """
+import os
 from typing import Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def is_placeholder(value: Optional[str]) -> bool:
+    """True when a credential is empty or still an .env.example sentinel.
+
+    The template ships sentinels shaped ``your_<name>_here`` —
+    ``your_anthropic_api_key_here``, ``your_openai_api_key_here``,
+    ``your_langsmith_key_here``. Any empty/whitespace value or such a sentinel
+    means "not configured": no API call should be attempted with it, and the
+    health endpoint must report the provider as NOT connected. Deliberately
+    small and explicit rather than a clever regex.
+    """
+    if value is None:
+        return True
+    v = value.strip()
+    if not v:
+        return True
+    return v.startswith("your_") and v.endswith("_here")
 
 
 class Settings(BaseSettings):
@@ -104,10 +123,21 @@ class Settings(BaseSettings):
     # field — that would accept inputs the old code treated as False.
     langchain_tracing_v2: str = Field(default="false")     # LANGCHAIN_TRACING_V2
     langchain_project: str = Field(default="nixus-sql")    # LANGCHAIN_PROJECT
+    langchain_api_key: Optional[str] = Field(default=None)  # LANGCHAIN_API_KEY
 
     @property
     def tracing_enabled(self) -> bool:
-        """Mirror of `os.environ.get("LANGCHAIN_TRACING_V2","false").lower()=="true"`."""
+        """Whether LangSmith tracing is actually active.
+
+        The raw flag still uses the strict ``.lower() == "true"`` test (NOT
+        Pydantic bool coercion — see the field note above). On top of that, a
+        placeholder/empty ``LANGCHAIN_API_KEY`` forces tracing OFF: enabling the
+        tracer with the .env.example sentinel produces a 403 on every LLM call
+        and floods the logs (7.2 amendment, defect D). Tracing is therefore
+        opt-in: a REAL key AND ``LANGCHAIN_TRACING_V2=true``.
+        """
+        if is_placeholder(self.langchain_api_key):
+            return False
         return self.langchain_tracing_v2.lower() == "true"
 
     # ── Resolved DB URLs ────────────────────────────────────────────────────
@@ -134,3 +164,24 @@ class Settings(BaseSettings):
 # Single module-level instance imported by every call site. Reads the
 # environment once at import, matching the project's prior import-time reads.
 settings = Settings()
+
+
+def apply_tracing_gate() -> None:
+    """Force LangSmith tracing OFF in the process environment when no real key
+    is present (7.2 amendment, defect D).
+
+    LangChain's background tracer reads ``LANGCHAIN_TRACING_V2`` straight from
+    ``os.environ``, not from this Settings object. If the .env ships
+    ``LANGCHAIN_TRACING_V2=true`` alongside the placeholder ``LANGCHAIN_API_KEY``
+    sentinel, the tracer activates and 403s on every LLM call. Overwriting the
+    env var here — at config import, before any LLM call — guarantees the tracer
+    stays dormant unless a real key is configured. No-op when a real key exists.
+    """
+    if is_placeholder(settings.langchain_api_key):
+        os.environ["LANGCHAIN_TRACING_V2"] = "false"
+        # keep the parsed setting consistent so `tracing_enabled` agrees.
+        settings.langchain_tracing_v2 = "false"
+
+
+# Apply the gate at import so it runs before langchain initializes its tracer.
+apply_tracing_gate()
