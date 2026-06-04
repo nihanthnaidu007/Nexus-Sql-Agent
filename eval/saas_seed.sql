@@ -80,20 +80,33 @@ INSERT INTO subscriptions (id, organization_id, plan_id, status, started_at, can
   (14,  1, 4, 'active',   '2024-01-01 00:00:00', NULL,                  50),
   (15, 12, 1, 'active',   '2023-12-19 11:50:00', NULL,                   2);
 
--- ── usage_events: 300, bucketed to orgs 1..10 ONLY ──────────────────────────
+-- ── usage_events: 262, bucketed to orgs 1..10 ONLY ──────────────────────────
 -- => orgs 11 and 12 have ZERO usage_events (the LEFT-join / "no usage" case).
 -- user_id is NULL for every 5th event (nullable FK); otherwise a valid users.id
--- in 1..60. One event per day across Jan–Oct 2024 -> a known monthly structure.
+-- in 1..60. occurred_at spread across 2024 -> a known monthly structure.
+--
+-- 6.2 amendment (H11 fix): per-org event counts are STRICTLY DISTINCT and
+-- decreasing (48,42,37,33,28,24,19,15,10,6 for orgs 1..10; orgs 11,12 absent =
+-- zero) so "top 3 by usage event count" is a tie-free, determinate ranking. This
+-- is a DATA fix: a ranking question requires determinate data independent of any
+-- system output. The zero-usage orgs (11,12) are preserved (H3/H19/H25), all
+-- events stay in 2024 (H5), and the generation is deterministic (fixed counts +
+-- pure arithmetic, no RNG). Total events = 262.
 INSERT INTO usage_events (organization_id, user_id, event_type, occurred_at, quantity)
-SELECT 1 + (gs % 10),                                              -- orgs 1..10
-       CASE WHEN gs % 5 = 0 THEN NULL ELSE 1 + (gs % 60) END,      -- nullable FK
-       (ARRAY['login', 'api_call', 'export', 'report_view'])[1 + (gs % 4)],
+SELECT o.org_id,
+       CASE WHEN gs % 5 = 0 THEN NULL                              -- nullable FK
+            ELSE 1 + ((o.org_id * 7 + gs) % 60) END,               -- valid users.id 1..60
+       (ARRAY['login', 'api_call', 'export', 'report_view'])[1 + ((o.org_id + gs) % 4)],
        TIMESTAMP '2024-01-01 00:00:00'
-         + (gs % 300) * INTERVAL '1 day'
-         + (gs % 24)  * INTERVAL '1 hour',
+         + ((o.org_id * 9 + gs * 3) % 300) * INTERVAL '1 day'
+         + (gs % 24) * INTERVAL '1 hour',
        1 + (gs % 10)
-FROM generate_series(1, 300) AS gs
-ORDER BY gs;
+FROM (VALUES
+        (1, 48), (2, 42), (3, 37), (4, 33), (5, 28),
+        (6, 24), (7, 19), (8, 15), (9, 10), (10, 6)
+     ) AS o(org_id, cnt)
+CROSS JOIN LATERAL generate_series(1, o.cnt) AS gs
+ORDER BY o.org_id, gs;
 
 -- ── invoices: 40, with 30 paid / 6 open / 4 void ────────────────────────────
 -- gs 1..30 -> paid, 31..36 -> open, 37..40 -> void (so paid count = 30).

@@ -186,11 +186,11 @@ _HARD: list[dict] = [
                  "JOIN invoices i ON i.organization_id=o.id AND i.status='paid' "
                  "GROUP BY p.tier;"},
     {"id": "H11", "tier": "hard", "ordered": True,
-     # Determinacy fix (Step 3): usage events are uniform across the 10 active
-     # orgs (all 30), so "top 3" is a 10-way tie. Added `o.id` as a deterministic
-     # tiebreaker so the REFERENCE is well-defined. Intent/difficulty unchanged
-     # and NOT made easier — H11 is ambiguous on this seed and is expected to
-     # fail unless the system reproduces the same tiebreak (an honest finding).
+     # 6.2 amendment: the seed now gives STRICTLY DISTINCT per-org event counts
+     # (48,42,37,33,28,24,19,15,10,6), so "top 3" is a tie-free, determinate
+     # ranking (3rd=37 != 4th=33). This is a DATA fix (a ranking question needs
+     # determinate data); the question and gold_sql intent are unchanged. The
+     # `o.id` tiebreaker is now a harmless no-op (counts never tie at the cutoff).
      "question": "Top 3 organizations by usage event count.",
      "gold_sql": "SELECT o.name, count(e.id) c FROM organizations o "
                  "JOIN usage_events e ON e.organization_id=o.id "
@@ -210,7 +210,15 @@ _HARD: list[dict] = [
      "gold_sql": "SELECT p.name FROM plans p "
                  "LEFT JOIN organizations o ON o.plan_id=p.id WHERE o.id IS NULL;"},
     {"id": "H15", "tier": "hard", "ordered": False,
-     "question": "For each organization, the number of distinct event types used.",
+     # 6.2 amendment: the original wording ("for each organization ...") was
+     # genuinely ambiguous — "all orgs incl. zeros" (LEFT) vs "orgs that used
+     # events" (INNER). Disambiguated to the more NATURAL business reading: you
+     # report event-type usage for organizations that have ACTUALLY generated
+     # events, not "0 types" rows for inactive tenants (unless explicitly asked
+     # for "all organizations"). Chosen on natural-reading merits, NOT to match
+     # system output. Gold stays the INNER join; still a hard GROUP BY+JOIN+DISTINCT.
+     "question": "Among organizations that have generated usage events, "
+                 "how many distinct event types has each used?",
      "gold_sql": "SELECT o.name, count(DISTINCT e.event_type) FROM organizations o "
                  "JOIN usage_events e ON e.organization_id=o.id GROUP BY o.id, o.name;"},
     # ── added (12) — weighted toward multi-hop / HAVING / cross-aggregate ──
