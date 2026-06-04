@@ -130,6 +130,14 @@ check_result, self_correct, classify_chart, explain_result.
 
 ## Full query benchmark (FULL_BENCHMARK_POSSIBLE = True)
 
+> **Superseded in Phase 6.2.** The benchmark of record is now the SaaS honest
+> benchmark — `python eval/run_saas_benchmark.py` (correctness by
+> result-equivalence against the deterministic `nixus_saas` seed). The Chinook
+> SQL-correctness gold set (E02) and the cache-accuracy gate
+> (`test_unrelated_miss_rate`) were retired and archived under
+> `eval/archive_chinook/`; latency is now a reported metric, not a gate. The
+> numbers below are the historical Chinook baseline, kept for the record.
+
 Command: `python eval/run_benchmark.py` → writes `eval/benchmark_results.json`,
 renders `BENCHMARK.md`. Duration **270.5s**. Result: **50 passed / 3 failed /
 53 total**; runner reported "✅ All non-negotiable bars met."

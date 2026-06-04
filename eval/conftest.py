@@ -23,6 +23,11 @@ from nixus.db.connection import sync_engine, sync_target_engine
 
 BASE_URL = os.environ.get("NIXUS_API_URL", "http://localhost:8000")
 
+# The retired Chinook gold set (6.2) lives under eval/archive_chinook/ for
+# history and must NOT be collected as part of the benchmark of record. See
+# eval/archive_chinook/README.md.
+collect_ignore_glob = ["archive_chinook/*"]
+
 # Sidecar file that custom metrics (latency percentiles, hit rates, etc.)
 # are written to so eval/report.py can pick them up when rendering
 # BENCHMARK.md. pytest-json-report captures pass/fail per test but not the

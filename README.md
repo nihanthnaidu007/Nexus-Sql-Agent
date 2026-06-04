@@ -644,22 +644,20 @@ The API server and database must be running first (see Setup & Usage).
 # Install eval-only dependencies
 pip install -r requirements-dev.txt
 
-# Full benchmark — runs every category and writes BENCHMARK.md
+# ── BENCHMARK OF RECORD (6.2): the SaaS honest benchmark ─────────────────────
+# Correctness = result-equivalence against the deterministic nixus_saas seed.
+# Point the target at nixus_saas, re-embed, then run. (Chinook gold retired.)
+TARGET_DATABASE_URL=postgresql://nixus_readonly:nixus_readonly@localhost:5433/nixus_saas \
+TARGET_ADMIN_DATABASE_URL=postgresql://nixus:nixus@localhost:5433/nixus_saas \
+  python -m nixus.schema.reembed                  # embeddings -> SaaS
+python eval/run_saas_benchmark.py                 # -> eval/saas_benchmark_results.json
+
+# ── Legacy Chinook-demo capability tests (NOT the benchmark of record) ───────
+# self_correction, safety, chart_classification, latency (latency is now a
+# reported metric, not a gate). Run against the Chinook demo target.
 python eval/run_benchmark.py
-
-# Single category (one of:
-#   sql_correctness, cache_accuracy, self_correction,
-#   safety, chart_classification, latency, all)
 python eval/run_benchmark.py --category safety
-python eval/run_benchmark.py --category sql_correctness
-
-# Skip slow latency tests
 python eval/run_benchmark.py --no-latency
-
-# Run tests but skip writing BENCHMARK.md
-python eval/run_benchmark.py --no-report
-
-# Override the API base URL
 NIXUS_API_URL=http://localhost:8000 python eval/run_benchmark.py
 ```
 
