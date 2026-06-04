@@ -1,18 +1,27 @@
 """
-NIXUS SQL evaluation harness — CLI entry point.
+NIXUS SQL evaluation harness — LEGACY Chinook-demo CLI.
+
+NOTE (6.2): the BENCHMARK OF RECORD is now the SaaS honest benchmark:
+
+    .venv/bin/python eval/run_saas_benchmark.py        # benchmark of record
+
+This legacy runner remains for the Chinook DEMO-target capability tests that
+were not retired (safety, self_correction, chart_classification) plus the
+recalibrated reported-metric latency. The Chinook SQL-correctness gold set
+(E02) and the cache-accuracy gate (test_unrelated_miss_rate) were retired and
+ARCHIVED under eval/archive_chinook/ (not collected) — so those categories are
+no longer available here.
 
 Usage:
-    python eval/run_benchmark.py                            # run all categories
+    python eval/run_benchmark.py                            # run remaining categories
     python eval/run_benchmark.py --category safety          # run only the safety tests
-    python eval/run_benchmark.py --category sql_correctness # run only sql-correctness tests
     python eval/run_benchmark.py -k correctness             # pytest -k expression filter
     python eval/run_benchmark.py --no-report                # skip BENCHMARK.md generation
     python eval/run_benchmark.py --no-latency               # skip slow latency tests
     python eval/run_benchmark.py -v                         # verbose pytest output
 
 Valid --category values:
-    sql_correctness, cache_accuracy, self_correction,
-    safety, chart_classification, latency, all
+    self_correction, safety, chart_classification, latency, all
 
 Environment:
     NIXUS_API_URL   Override the API base URL (default: http://localhost:8000)
@@ -34,9 +43,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 
+# NOTE (6.2): sql_correctness + cache_accuracy were retired/archived (see
+# eval/archive_chinook/). The SaaS benchmark of record is eval/run_saas_benchmark.py.
 CATEGORY_TO_PATH: dict[str, str] = {
-    "sql_correctness": "eval/test_sql_correctness.py",
-    "cache_accuracy": "eval/test_cache_accuracy.py",
     "self_correction": "eval/test_self_correction.py",
     "safety": "eval/test_safety.py",
     "chart_classification": "eval/test_chart_classification.py",
@@ -49,11 +58,6 @@ VALID_CATEGORIES = list(CATEGORY_TO_PATH.keys()) + ["all"]
 # by an earlier full run. Keep this in sync with record_metric() calls in the
 # corresponding test files.
 CATEGORY_METRIC_KEYS: dict[str, list[str]] = {
-    "sql_correctness": [],
-    "cache_accuracy": [
-        "paraphrase_hits", "paraphrase_total", "paraphrase_hit_rate",
-        "unrelated_misses", "unrelated_total", "unrelated_miss_rate",
-    ],
     "self_correction": [],
     "safety": [],
     "chart_classification": [],

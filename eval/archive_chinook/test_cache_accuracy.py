@@ -1,4 +1,12 @@
 """
+RETIRED (6.2) — Chinook cache-accuracy gate. ARCHIVED, NOT the benchmark.
+
+This module produced the chronically-borderline ``test_unrelated_miss_rate``
+artifact. It is kept for history only and is NOT collected by pytest
+(eval/conftest.py ``collect_ignore_glob``). The benchmark of record is
+eval/run_saas_benchmark.py.
+
+──────────────────────────────────────────────────────────────────────────────
 Cache accuracy tests — Category 2 of the NIXUS SQL evaluation harness.
 
 Tests two properties:

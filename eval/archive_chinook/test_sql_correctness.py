@@ -1,4 +1,13 @@
 """
+RETIRED (6.2) — Chinook SQL-correctness gold set. ARCHIVED, NOT the benchmark.
+
+This is the source of the E02 failure and of the broken column-overlap
+comparison (``result_overlap_rate``) it relied on — see eval/result_equivalence.py
+for the honest replacement. It is kept here for history only and is NOT collected
+by pytest (eval/conftest.py ``collect_ignore_glob``). The benchmark of record is
+eval/run_saas_benchmark.py / eval/test_saas_correctness.py.
+
+──────────────────────────────────────────────────────────────────────────────
 SQL correctness tests — Category 1 of the NIXUS SQL evaluation harness.
 
 For each of the 30 gold queries:
@@ -11,7 +20,7 @@ Non-negotiable bar: ≥ 24 / 30 tests must pass (80% sql_correctness_rate).
 """
 
 import pytest
-from eval.gold_queries import GOLD_QUERIES
+from eval.archive_chinook.gold_queries import GOLD_QUERIES
 from eval.conftest import (
     run_query,
     run_gold_sql,
