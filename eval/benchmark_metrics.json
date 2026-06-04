@@ -6,17 +6,17 @@
   "unrelated_total": 5,
   "unrelated_miss_rate": 0.0,
   "cache_miss_latencies": {
-    "p50": 8184,
-    "p95": 9382,
-    "p99": 9443,
+    "p50": 6828,
+    "p95": 9367,
+    "p99": 9788,
     "samples": 5,
     "cache_hits_observed": 0,
     "timeouts": 0
   },
   "cache_hit_latencies": {
-    "p50": 2217,
-    "p95": 2498,
-    "p99": 2499,
+    "p50": 2242,
+    "p95": 4083,
+    "p99": 4694,
     "samples": 10
   }
 }

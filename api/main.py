@@ -124,9 +124,24 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
+class ClarificationExchange(BaseModel):
+    question: str = ""
+    answer: str = ""
+
+
+class ClarificationContext(BaseModel):
+    """Prior clarification turns carried back in by the client (stateless round-trip)."""
+    original_question: str = ""
+    prior_clarifications: list[ClarificationExchange] = []
+
+
 class RunRequest(BaseModel):
     user_query: str
     session_id: str = ""
+    # Optional + additive: absent for a normal single-turn query (the benchmark
+    # path), present only when the client answers a clarifying question.
+    clarification_context: ClarificationContext | None = None
+    clarification_round: int = 0
 
 
 class RunSQLRequest(BaseModel):
@@ -137,15 +152,23 @@ class RunSQLRequest(BaseModel):
 class StreamRequest(BaseModel):
     user_query: str
     session_id: str = ""
+    clarification_context: ClarificationContext | None = None
+    clarification_round: int = 0
 
 
 @router.post("/run")
 async def run_agent(req: RunRequest):
     # HTTP shell: build the per-request context (carries session identity), then
     # delegate the graph run to the framework-agnostic service. The core boundary
-    # receives the plain session_id value, never the context type.
+    # receives plain values (session_id + clarification round-trip), never the
+    # request/context types.
     ctx = RequestContext.for_session(req.session_id)
-    return await run_query(req.user_query, ctx.session_id)
+    return await run_query(
+        req.user_query,
+        ctx.session_id,
+        clarification_context=req.clarification_context.model_dump() if req.clarification_context else None,
+        clarification_round=req.clarification_round,
+    )
 
 
 @router.post("/stream")
@@ -160,8 +183,13 @@ async def stream_agent(req: StreamRequest):
     initial_state = {
         "user_query": req.user_query,
         "session_id": session_id,
+        "clarification_context": req.clarification_context.model_dump() if req.clarification_context else None,
+        "clarification_round": req.clarification_round,
         "scope_category": None,
         "scope_message": None,
+        "outcome": None,
+        "clarifying_question": None,
+        "reason": None,
         "intent_class": "",
         "extracted_entities": [],
         "cache_result": None,
@@ -269,6 +297,9 @@ async def stream_agent(req: StreamRequest):
                         "is_complete": True,
                         "scope_category": output.get("scope_category"),
                         "scope_message": output.get("scope_message"),
+                        "outcome": output.get("outcome"),
+                        "clarifying_question": output.get("clarifying_question"),
+                        "reason": output.get("reason"),
                         "intent_class": output.get("intent_class"),
                         "extracted_entities": output.get("extracted_entities", []),
                         "tables_identified": output.get("tables_identified", []),
@@ -338,7 +369,9 @@ async def run_edited_sql(req: RunSQLRequest):
 
     mini_state = SQLAgentState(
         user_query="[user-edited SQL]", session_id=RequestContext.for_session(req.session_id).session_id,
+        clarification_context=None, clarification_round=0,
         scope_category="IN_SCOPE", scope_message=None,
+        outcome="ANSWERED", clarifying_question=None, reason=None,
         generated_sql=req.sql, correction_attempts=0,
         correction_history=[], completed_nodes=[], stream_updates=[],
         intent_class="READ", extracted_entities=[],

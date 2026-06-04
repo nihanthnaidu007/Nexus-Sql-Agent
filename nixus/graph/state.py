@@ -78,8 +78,16 @@ class StreamUpdate(BaseModel):
 class SQLAgentState(TypedDict):
     user_query: str
     session_id: str
+    # Stateless clarification round-trip inputs (Option B): carried in with the
+    # request, not persisted server-side. Absent/0 for a normal single-turn query.
+    clarification_context: Optional[dict]
+    clarification_round: int
     scope_category: Optional[str]
     scope_message: Optional[str]
+    # Response-outcome discriminator + the text the client surfaces for each.
+    outcome: Optional[str]
+    clarifying_question: Optional[str]
+    reason: Optional[str]
     intent_class: str
     extracted_entities: list
     cache_result: Optional[dict]

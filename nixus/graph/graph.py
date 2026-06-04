@@ -113,11 +113,12 @@ def build_graph():
 
     workflow.set_entry_point("scope_classifier")
 
-    # Scope gate. IN_SCOPE continues into the existing flow unchanged; the three
-    # refusal/clarification categories route to a terminal that surfaces the
-    # appropriate message. (4.2 makes NEEDS_CLARIFICATION a full round-trip.)
+    # Scope gate. ANSWERED (IN_SCOPE) continues into the existing flow unchanged;
+    # NEEDS_CLARIFICATION and the refusal outcomes (incl. the AMBIGUOUS-termination
+    # cap) route to a terminal that surfaces the clarifying question or reason.
+    # Clarification is a stateless request/response round-trip — no interrupt.
     workflow.add_conditional_edges("scope_classifier",
-        lambda s: "parse_intent" if s.get("scope_category") == "IN_SCOPE" else "scope_response",
+        lambda s: "parse_intent" if s.get("outcome") == "ANSWERED" else "scope_response",
         {"parse_intent": "parse_intent", "scope_response": "scope_response"})
     workflow.add_edge("scope_response", END)
 

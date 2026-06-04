@@ -506,6 +506,13 @@ if "partial_state" not in st.session_state:
     st.session_state.partial_state = {}
 if "trigger_run" not in st.session_state:
     st.session_state.trigger_run = False
+# Stateless clarification conversation state (Option B). `clarify` holds the
+# pending clarifying question + accumulated context; `clarify_followup` queues a
+# follow-up run carrying the user's answer.
+if "clarify" not in st.session_state:
+    st.session_state.clarify = None
+if "clarify_followup" not in st.session_state:
+    st.session_state.clarify_followup = None
 
 
 @st.cache_data(ttl=60)
@@ -527,18 +534,28 @@ def get_stats():
         return {"entries": 0, "total_hits": 0, "hit_rate": 0}, {"total": 0, "seeded": 0, "auto_learned": 0}
 
 
-def run_query_streaming(user_query: str, session_id: str):
+def run_query_streaming(user_query: str, session_id: str,
+                        clarification_context: dict | None = None,
+                        clarification_round: int = 0):
     """
     Calls /api/v1/stream and yields partial state dicts as each SSE event arrives.
     Each yielded dict represents one node completing.
     Final dict has is_complete=True.
+
+    ``clarification_context`` / ``clarification_round`` carry the stateless
+    clarification round-trip; both are omitted for a normal first-turn query.
     """
     url = f"{API_BASE}/api/v1/stream"
+
+    payload = {"user_query": user_query, "session_id": session_id}
+    if clarification_context is not None:
+        payload["clarification_context"] = clarification_context
+        payload["clarification_round"] = clarification_round
 
     try:
         with requests.post(
             url,
-            json={"user_query": user_query, "session_id": session_id},
+            json=payload,
             stream=True,
             timeout=120,
             headers={"Accept": "text/event-stream"}
@@ -716,14 +733,28 @@ col_run, col_spacer = st.columns([1, 5])
 with col_run:
     run_clicked = st.button("▶ RUN QUERY", use_container_width=True)
 
-# ── Streaming run handler ───────────────────────────────────────────────────
-if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
+# ── Streaming run handler (fresh query OR clarification follow-up) ───────────
+followup = st.session_state.get("clarify_followup")
+fresh = (run_clicked or st.session_state.get("trigger_run")) and user_query.strip()
+
+if followup or fresh:
+    if followup:
+        run_q = followup["user_query"]
+        clar_ctx = followup["clarification_context"]
+        clar_round = followup["clarification_round"]
+    else:
+        run_q = user_query
+        clar_ctx = None
+        clar_round = 0
+        st.session_state.clarify = None        # a fresh question starts a new conversation
+        st.session_state.last_query = user_query
+
+    st.session_state.clarify_followup = None
     st.session_state.trigger_run = False
     st.session_state.show_chart = False
     st.session_state.edit_sql_mode = False
     st.session_state.result = None
     st.session_state.streaming = True
-    st.session_state.last_query = user_query
     st.session_state.partial_state = {
         "completed_nodes": [],
         "current_node": "scope_classifier",
@@ -751,7 +782,7 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
     intel_placeholder = st.empty()
     status_placeholder = st.empty()
 
-    for partial in run_query_streaming(user_query, st.session_state.session_id):
+    for partial in run_query_streaming(run_q, st.session_state.session_id, clar_ctx, clar_round):
         if partial.get("error") and not partial.get("is_complete"):
             st.session_state.partial_state.update(partial)
             continue
@@ -767,9 +798,53 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
         if partial.get("is_complete"):
             st.session_state.result = partial
             st.session_state.streaming = False
+            # Set up (or clear) the clarification conversation based on outcome.
+            if partial.get("outcome") == "NEEDS_CLARIFICATION":
+                prior = list((clar_ctx or {}).get("prior_clarifications") or [])
+                st.session_state.clarify = {
+                    "original_question": (clar_ctx or {}).get("original_question") or run_q,
+                    "prior_clarifications": prior,
+                    "pending_question": partial.get("clarifying_question") or "Could you clarify?",
+                }
+            else:
+                st.session_state.clarify = None
             break
 
     st.rerun()
+
+
+# ── Clarification round-trip panel (stateless follow-up) ────────────────────
+if st.session_state.get("clarify"):
+    c = st.session_state.clarify
+    round_no = len(c["prior_clarifications"]) + 1
+    st.markdown(f"""
+    <div class="safety-warning" style="border-color:var(--cyan);background:rgba(0,229,255,0.06);">
+        <div style="font-family:'Syne',sans-serif;color:var(--cyan);font-size:1rem;font-weight:800;margin-bottom:8px;">
+            ◈ NEED A LITTLE MORE DETAIL &nbsp;·&nbsp; clarification {round_no} of 2
+        </div>
+        <div style="font-family:'Outfit',sans-serif;color:var(--text-secondary);font-size:0.92rem;">
+            {html.escape(c["pending_question"])}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    clar_answer = st.text_input(
+        "Your answer", key="clarify_answer_input",
+        placeholder="Add the detail the question asks for…",
+        label_visibility="collapsed",
+    )
+    if st.button("➤ SEND ANSWER", key="clarify_send") and clar_answer.strip():
+        prior = c["prior_clarifications"] + [
+            {"question": c["pending_question"], "answer": clar_answer.strip()}
+        ]
+        st.session_state.clarify_followup = {
+            "user_query": clar_answer.strip(),
+            "clarification_context": {
+                "original_question": c["original_question"],
+                "prior_clarifications": prior,
+            },
+            "clarification_round": len(prior),
+        }
+        st.rerun()
 
 
 # ── Intelligence strip + results ────────────────────────────────────────────
@@ -784,15 +859,15 @@ if st.session_state.result:
         render_node_status(r)
 
     # ── Error / scope-refusal card ─────────────────────────────────────────
+    _REFUSAL_HEADINGS = {
+        "REFUSED_WRITE": "◈ READ-ONLY — WRITE NOT PERMITTED",
+        "REFUSED_OUT_OF_SCOPE": "◈ OUT OF SCOPE",
+        "REFUSED_AMBIGUOUS": "◈ COULDN'T DETERMINE THE QUESTION",
+    }
     if r.get("error"):
         error_msg = html.escape(r["error"])
-        scope_cat = r.get("scope_category")
-        if scope_cat in ("WRITE_REFUSAL", "OUT_OF_SCOPE"):
-            heading = (
-                "◈ READ-ONLY — WRITE NOT PERMITTED"
-                if scope_cat == "WRITE_REFUSAL"
-                else "◈ OUT OF SCOPE"
-            )
+        heading = _REFUSAL_HEADINGS.get(r.get("outcome"))
+        if heading:
             st.markdown(f"""
             <div class="safety-warning">
                 <div style="font-family:'Syne',sans-serif;color:var(--red);font-size:1rem;font-weight:800;margin-bottom:8px;">
@@ -959,8 +1034,10 @@ if st.session_state.result:
         )
 
     # ── Insight card ──────────────────────────────────────────────────────
+    # Only for answered queries — clarification questions and refusal reasons
+    # are surfaced by their own panels, not as a data "insight".
     explanation = r.get("explanation", "")
-    if explanation:
+    if explanation and r.get("outcome", "ANSWERED") == "ANSWERED":
         trace_url = r.get("trace_url")
         trace_id = r.get("trace_id")
         if trace_url:

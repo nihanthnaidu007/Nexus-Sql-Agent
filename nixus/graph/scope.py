@@ -49,6 +49,24 @@ CLARIFY_FALLBACK = (
     "Could you rephrase that as a specific question about the data? For "
     "example, name the table, metric, or filter you're interested in."
 )
+AMBIGUOUS_TERMINATION_MESSAGE = (
+    "I asked for clarification but still couldn't determine what you're looking "
+    "for. Please start a new question that names the specific table, metric, or "
+    "filter you want."
+)
+
+# After this many clarification rounds of continued ambiguity the server stops
+# asking and returns a clean refusal (REFUSED_AMBIGUOUS). Bounds the loop the
+# original spec forgot to terminate.
+CLARIFICATION_ROUND_CAP = 2
+
+
+# Response-outcome discriminators (returned in the /api/v1 JSON).
+OUTCOME_ANSWERED = "ANSWERED"
+OUTCOME_NEEDS_CLARIFICATION = "NEEDS_CLARIFICATION"
+OUTCOME_REFUSED_OUT_OF_SCOPE = "REFUSED_OUT_OF_SCOPE"
+OUTCOME_REFUSED_WRITE = "REFUSED_WRITE"
+OUTCOME_REFUSED_AMBIGUOUS = "REFUSED_AMBIGUOUS"
 
 
 # ── Conservative regex fast-path ─────────────────────────────────────────────
@@ -218,3 +236,60 @@ def result_from_llm(category: str, clarification: str = "", reason: str = "") ->
     if cat is ScopeCategory.WRITE_REFUSAL:
         return ScopeResult(cat, reason=WRITE_REFUSAL_MESSAGE)
     return ScopeResult(ScopeCategory.IN_SCOPE)
+
+
+# ── Stateless clarification round-trip (Option B) ────────────────────────────
+def build_clarified_query(user_query: str, clarification_context: Optional[dict]) -> str:
+    """Fold a follow-up's prior clarification context into a single self-contained
+    question for re-classification (and, when resolved, for generation).
+
+    ``clarification_context`` shape: {original_question: str,
+    prior_clarifications: [{question, answer}, ...]}. The list already includes
+    the user's latest answer (the current request's user_query echoes it), so it
+    is not appended a second time.
+
+    With no context this returns ``user_query`` verbatim — the normal single-turn
+    path is unchanged.
+    """
+    if not clarification_context:
+        return user_query
+    parts: list[str] = []
+    original = (clarification_context.get("original_question") or user_query or "").strip()
+    if original:
+        parts.append(original)
+    for pc in clarification_context.get("prior_clarifications") or []:
+        question = (pc.get("question") or "").strip()
+        answer = (pc.get("answer") or "").strip()
+        if question:
+            parts.append(f"Clarifying question: {question}")
+        if answer:
+            parts.append(f"Answer: {answer}")
+    return "\n".join(parts) if parts else user_query
+
+
+def effective_clarification_round(clarification_round: int, clarification_context: Optional[dict]) -> int:
+    """The round count the SERVER trusts for termination. Defends against a client
+    that mismanages the counter by also counting the clarifications already
+    carried in the context — whichever is larger wins."""
+    prior = 0
+    if clarification_context:
+        prior = len(clarification_context.get("prior_clarifications") or [])
+    return max(int(clarification_round or 0), prior)
+
+
+def outcome_for(category: ScopeCategory, effective_round: int) -> str:
+    """Map a scope category + the effective round to a response outcome.
+
+    NEEDS_CLARIFICATION becomes REFUSED_AMBIGUOUS once the round cap is reached —
+    this is where the loop terminates, enforced server-side.
+    """
+    if category is ScopeCategory.IN_SCOPE:
+        return OUTCOME_ANSWERED
+    if category is ScopeCategory.OUT_OF_SCOPE:
+        return OUTCOME_REFUSED_OUT_OF_SCOPE
+    if category is ScopeCategory.WRITE_REFUSAL:
+        return OUTCOME_REFUSED_WRITE
+    # NEEDS_CLARIFICATION
+    if effective_round >= CLARIFICATION_ROUND_CAP:
+        return OUTCOME_REFUSED_AMBIGUOUS
+    return OUTCOME_NEEDS_CLARIFICATION

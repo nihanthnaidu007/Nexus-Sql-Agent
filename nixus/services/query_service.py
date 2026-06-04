@@ -30,17 +30,29 @@ def get_thread_config(session_id: str, base_config: dict | None = None) -> dict:
     return cfg
 
 
-async def run_query(user_query: str, session_id: str) -> dict:
+async def run_query(
+    user_query: str,
+    session_id: str,
+    clarification_context: dict | None = None,
+    clarification_round: int = 0,
+) -> dict:
     """Run one query through the compiled graph and return the final state dict.
 
     ``session_id`` must already be resolved by the caller (the API supplies a
     uuid default); session handling stays in the adapter. Returns the raw final
     graph state, exactly as the ``/api/run`` handler previously returned it.
+
+    ``clarification_context`` / ``clarification_round`` carry the stateless
+    clarification round-trip (Option B) in with the request. Both default to the
+    fresh single-turn case, so a normal query behaves exactly as before.
     """
     initial_state = SQLAgentState(
         user_query=user_query,
         session_id=session_id,
+        clarification_context=clarification_context,
+        clarification_round=clarification_round,
         scope_category=None, scope_message=None,
+        outcome=None, clarifying_question=None, reason=None,
         intent_class="", extracted_entities=[],
         cache_result=None, served_from_cache=False,
         relevant_schemas=[], schema_context="", tables_identified=[],
