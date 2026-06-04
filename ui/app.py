@@ -506,8 +506,6 @@ if "partial_state" not in st.session_state:
     st.session_state.partial_state = {}
 if "trigger_run" not in st.session_state:
     st.session_state.trigger_run = False
-if "pending_approval" not in st.session_state:
-    st.session_state.pending_approval = None
 
 
 @st.cache_data(ttl=60)
@@ -629,7 +627,7 @@ def render_intelligence_strip(state: dict):
 def render_node_status(state: dict):
     """Renders the state machine node badges from any state dict."""
     ALL_NODES = [
-        "parse_intent", "safety_check", "check_cache", "retrieve_schema",
+        "scope_classifier", "parse_intent", "check_cache", "retrieve_schema",
         "retrieve_fewshot", "generate_sql", "validate_syntax", "execute_query",
         "check_result", "self_correct", "classify_chart", "explain_result"
     ]
@@ -724,12 +722,11 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
     st.session_state.show_chart = False
     st.session_state.edit_sql_mode = False
     st.session_state.result = None
-    st.session_state.pending_approval = None
     st.session_state.streaming = True
     st.session_state.last_query = user_query
     st.session_state.partial_state = {
         "completed_nodes": [],
-        "current_node": "parse_intent",
+        "current_node": "scope_classifier",
         "stream_updates": [],
         "intent_class": "",
         "extracted_entities": [],
@@ -759,12 +756,6 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
             st.session_state.partial_state.update(partial)
             continue
 
-        # WRITE interrupt — graph paused waiting for approval
-        if partial.get("_event_type") == "interrupted":
-            st.session_state.pending_approval = partial
-            st.session_state.streaming = False
-            break
-
         st.session_state.partial_state.update(partial)
 
         with intel_placeholder.container():
@@ -780,56 +771,6 @@ if (run_clicked or st.session_state.get("trigger_run")) and user_query.strip():
 
     st.rerun()
 
-# ── Write approval modal ────────────────────────────────────────────────────
-if st.session_state.pending_approval:
-    pa = st.session_state.pending_approval
-    operation = pa.get("write_operation_type", "WRITE")
-
-    st.markdown(f"""
-    <div class="approval-modal">
-        <div class="approval-modal-title">⚠ WRITE OPERATION REQUIRES APPROVAL</div>
-        <div class="approval-modal-sub">
-            The agent has generated a <strong>{html.escape(operation)}</strong> statement.
-            NIXUS SQL requires explicit human approval before executing any write operation.
-            Review the intent, then approve or deny below.
-        </div>
-        <div class="approval-operation">{html.escape(operation)}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col_approve, col_deny, _ = st.columns([1, 1, 4])
-    with col_approve:
-        if st.button("✓ APPROVE", use_container_width=True):
-            with st.spinner("Resuming execution with approval..."):
-                try:
-                    resp = requests.post(
-                        f"{API_BASE}/api/v1/approve-write",
-                        json={"session_id": st.session_state.session_id, "approved": True},
-                        timeout=60
-                    )
-                    result = resp.json()
-                    st.session_state.result = result
-                    st.session_state.pending_approval = None
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
-
-    with col_deny:
-        if st.button("✕ DENY", use_container_width=True):
-            with st.spinner("Resuming execution with denial..."):
-                try:
-                    resp = requests.post(
-                        f"{API_BASE}/api/v1/approve-write",
-                        json={"session_id": st.session_state.session_id, "approved": False},
-                        timeout=60
-                    )
-                    result = resp.json()
-                    st.session_state.result = result
-                    st.session_state.pending_approval = None
-                    st.rerun()
-                except Exception as e:
-                    st.error(str(e))
-
 
 # ── Intelligence strip + results ────────────────────────────────────────────
 if st.session_state.result:
@@ -842,14 +783,20 @@ if st.session_state.result:
     with col_nodes:
         render_node_status(r)
 
-    # ── Error / WRITE safety card ──────────────────────────────────────────
+    # ── Error / scope-refusal card ─────────────────────────────────────────
     if r.get("error"):
         error_msg = html.escape(r["error"])
-        if "operation blocked" in r["error"] or "approval was denied" in r["error"]:
+        scope_cat = r.get("scope_category")
+        if scope_cat in ("WRITE_REFUSAL", "OUT_OF_SCOPE"):
+            heading = (
+                "◈ READ-ONLY — WRITE NOT PERMITTED"
+                if scope_cat == "WRITE_REFUSAL"
+                else "◈ OUT OF SCOPE"
+            )
             st.markdown(f"""
             <div class="safety-warning">
                 <div style="font-family:'Syne',sans-serif;color:var(--red);font-size:1rem;font-weight:800;margin-bottom:8px;">
-                    ⚠ WRITE OPERATION BLOCKED
+                    {heading}
                 </div>
                 <div style="font-family:'Outfit',sans-serif;color:var(--text-secondary);font-size:0.85rem;">
                     {error_msg}

@@ -78,11 +78,10 @@ class StreamUpdate(BaseModel):
 class SQLAgentState(TypedDict):
     user_query: str
     session_id: str
+    scope_category: Optional[str]
+    scope_message: Optional[str]
     intent_class: str
     extracted_entities: list
-    requires_approval: bool
-    write_operation_type: Optional[str]
-    approval_granted: bool
     cache_result: Optional[dict]
     served_from_cache: bool
     relevant_schemas: list

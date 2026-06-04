@@ -10,6 +10,7 @@ load_dotenv()
 
 MAX_ATTEMPTS = settings.max_correction_attempts
 
+from nixus.graph.nodes.scope_classifier import scope_classifier_node, scope_response_node
 from nixus.graph.nodes.parse_intent import parse_intent_node
 from nixus.graph.nodes.check_cache import check_cache_node
 from nixus.graph.nodes.retrieve_schema import retrieve_schema_node
@@ -22,7 +23,6 @@ from nixus.graph.nodes.check_result import check_result_node
 from nixus.graph.nodes.self_correct import self_correct_node
 from nixus.graph.nodes.classify_chart import classify_chart_node
 from nixus.graph.nodes.explain_result import explain_result_node
-from nixus.safety.approval_gate import safety_check_node
 
 # The LangGraph checkpointer is NIXUS-owned bookkeeping → STATE database.
 # AsyncPostgresSaver uses psycopg3 (not asyncpg) and requires the URL in plain
@@ -96,8 +96,9 @@ def build_graph():
 
     workflow = StateGraph(SQLAgentState)
 
+    workflow.add_node("scope_classifier", scope_classifier_node)
+    workflow.add_node("scope_response",   scope_response_node)
     workflow.add_node("parse_intent",     parse_intent_node)
-    workflow.add_node("safety_check",     safety_check_node)
     workflow.add_node("check_cache",      check_cache_node)
     workflow.add_node("retrieve_schema",  retrieve_schema_node)
     workflow.add_node("retrieve_fewshot", retrieve_fewshot_node)
@@ -110,15 +111,20 @@ def build_graph():
     workflow.add_node("classify_chart",   classify_chart_node)
     workflow.add_node("explain_result",   explain_result_node)
 
-    workflow.set_entry_point("parse_intent")
+    workflow.set_entry_point("scope_classifier")
 
-    workflow.add_conditional_edges("parse_intent",
-        lambda s: "safety_check" if s["requires_approval"] else "check_cache",
-        {"safety_check": "safety_check", "check_cache": "check_cache"})
+    # Scope gate. IN_SCOPE continues into the existing flow unchanged; the three
+    # refusal/clarification categories route to a terminal that surfaces the
+    # appropriate message. (4.2 makes NEEDS_CLARIFICATION a full round-trip.)
+    workflow.add_conditional_edges("scope_classifier",
+        lambda s: "parse_intent" if s.get("scope_category") == "IN_SCOPE" else "scope_response",
+        {"parse_intent": "parse_intent", "scope_response": "scope_response"})
+    workflow.add_edge("scope_response", END)
 
-    workflow.add_conditional_edges("safety_check",
-        lambda s: "check_cache" if s.get("approval_granted") else END,
-        {"check_cache": "check_cache", END: END})
+    # parse_intent classifies READ/SCHEMA_QUESTION/AMBIGUOUS (used downstream by
+    # generate_sql); write requests are already refused at the scope gate, so it
+    # always continues to caching/retrieval.
+    workflow.add_edge("parse_intent", "check_cache")
 
     workflow.add_conditional_edges("check_cache",
         lambda s: "classify_chart" if s["served_from_cache"] else "retrieve_schema",
@@ -163,5 +169,5 @@ def build_graph():
     workflow.add_edge("classify_chart", "explain_result")
     workflow.add_edge("explain_result", END)
 
-    _graph = workflow.compile(checkpointer=_checkpointer, interrupt_before=["safety_check"])
+    _graph = workflow.compile(checkpointer=_checkpointer)
     return _graph

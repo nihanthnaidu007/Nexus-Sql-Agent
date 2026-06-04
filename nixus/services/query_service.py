@@ -40,8 +40,8 @@ async def run_query(user_query: str, session_id: str) -> dict:
     initial_state = SQLAgentState(
         user_query=user_query,
         session_id=session_id,
-        intent_class="", extracted_entities=[], requires_approval=False,
-        write_operation_type=None, approval_granted=False,
+        scope_category=None, scope_message=None,
+        intent_class="", extracted_entities=[],
         cache_result=None, served_from_cache=False,
         relevant_schemas=[], schema_context="", tables_identified=[],
         similar_examples=[], fewshot_context="",

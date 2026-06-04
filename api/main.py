@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
-from langgraph.types import Command
 from nixus.graph.graph import build_graph, init_checkpointer, aclose_checkpointer
 from nixus.graph.state import SQLAgentState
 from nixus.db.connection import check_db_connection, get_state_engine, get_target_engine
@@ -49,7 +48,7 @@ async def lifespan(app: FastAPI):
         build_graph()
         logger.info("LangGraph PostgreSQL checkpointer initialized and graph compiled.")
     except Exception:
-        logger.exception("Checkpointer initialization failed; WRITE approval interrupt/resume will not work")
+        logger.exception("Checkpointer initialization failed; graph state persistence will not work")
 
     try:
         eviction_stats = await evict_stale_cache_entries(
@@ -140,11 +139,6 @@ class StreamRequest(BaseModel):
     session_id: str = ""
 
 
-class ApproveWriteRequest(BaseModel):
-    session_id: str
-    approved: bool
-
-
 @router.post("/run")
 async def run_agent(req: RunRequest):
     # HTTP shell: build the per-request context (carries session identity), then
@@ -166,11 +160,10 @@ async def stream_agent(req: StreamRequest):
     initial_state = {
         "user_query": req.user_query,
         "session_id": session_id,
+        "scope_category": None,
+        "scope_message": None,
         "intent_class": "",
         "extracted_entities": [],
-        "requires_approval": False,
-        "write_operation_type": None,
-        "approval_granted": False,
         "cache_result": None,
         "served_from_cache": False,
         "relevant_schemas": [],
@@ -210,9 +203,10 @@ async def stream_agent(req: StreamRequest):
         root_run_id = None   # run_id of the root chain (set on first on_chain_start)
 
         NODE_NAMES = {
-            "parse_intent", "safety_check", "check_cache", "retrieve_schema",
-            "retrieve_fewshot", "generate_sql", "validate_syntax", "execute_query",
-            "check_result", "self_correct", "classify_chart", "explain_result"
+            "scope_classifier", "scope_response", "parse_intent", "check_cache",
+            "retrieve_schema", "retrieve_fewshot", "generate_sql", "validate_syntax",
+            "execute_query", "check_result", "self_correct", "classify_chart",
+            "explain_result"
         }
 
         try:
@@ -261,24 +255,6 @@ async def stream_agent(req: StreamRequest):
                     if not isinstance(output, dict):
                         continue
 
-                    # Detect interrupt: graph paused waiting for write approval
-                    if (
-                        output.get("requires_approval")
-                        and "safety_check" not in output.get("completed_nodes", [])
-                    ):
-                        operation = output.get("write_operation_type") or "WRITE"
-                        interrupted = {
-                            "node": "interrupted",
-                            "is_complete": False,
-                            "requires_approval": True,
-                            "write_operation_type": operation,
-                            "session_id": session_id,
-                            "stream_updates": output.get("stream_updates", []),
-                            "completed_nodes": output.get("completed_nodes", []),
-                        }
-                        yield {"event": "interrupted", "data": json.dumps(interrupted)}
-                        return
-
                     # Build trace URL from root run ID.
                     # get_trace_url is sync (uses time.sleep for retries);
                     # run it in a thread so we don't block the event loop.
@@ -291,6 +267,8 @@ async def stream_agent(req: StreamRequest):
                     final = {
                         "node": "complete",
                         "is_complete": True,
+                        "scope_category": output.get("scope_category"),
+                        "scope_message": output.get("scope_message"),
                         "intent_class": output.get("intent_class"),
                         "extracted_entities": output.get("extracted_entities", []),
                         "tables_identified": output.get("tables_identified", []),
@@ -360,10 +338,10 @@ async def run_edited_sql(req: RunSQLRequest):
 
     mini_state = SQLAgentState(
         user_query="[user-edited SQL]", session_id=RequestContext.for_session(req.session_id).session_id,
+        scope_category="IN_SCOPE", scope_message=None,
         generated_sql=req.sql, correction_attempts=0,
         correction_history=[], completed_nodes=[], stream_updates=[],
-        intent_class="READ", extracted_entities=[], requires_approval=False,
-        write_operation_type=None, approval_granted=True,
+        intent_class="READ", extracted_entities=[],
         cache_result=None, served_from_cache=False,
         relevant_schemas=[], schema_context="", tables_identified=[],
         similar_examples=[], fewshot_context="",
@@ -460,34 +438,12 @@ async def health():
         "langsmith_tracing": is_tracing_enabled(),
         "llm_last_checked": llm_health.get("checked_at", 0),
         "nodes": [
-            "parse_intent", "safety_check", "check_cache", "retrieve_schema", "retrieve_fewshot",
-            "generate_sql", "validate_syntax", "verify_grounding", "execute_query", "check_result",
-            "self_correct", "classify_chart", "explain_result"
+            "scope_classifier", "scope_response", "parse_intent", "check_cache",
+            "retrieve_schema", "retrieve_fewshot", "generate_sql", "validate_syntax",
+            "verify_grounding", "execute_query", "check_result", "self_correct",
+            "classify_chart", "explain_result"
         ],
         "version": "1.0.0"
-    }
-
-
-@router.post("/approve-write")
-async def approve_write(req: ApproveWriteRequest):
-    """Resume an interrupted graph with the human's approval decision."""
-    ctx = RequestContext(session_id=req.session_id)
-    g = build_graph()
-    config = get_thread_config(ctx.session_id)
-    final_state = await g.ainvoke(
-        Command(update={"approval_granted": req.approved}, resume=req.approved),
-        config=config,
-    )
-    return {
-        "status": "approved" if req.approved else "denied",
-        "approval_granted": req.approved,
-        "explanation": final_state.get("explanation", ""),
-        "error": final_state.get("error"),
-        "generated_sql": final_state.get("generated_sql"),
-        "execution_result": final_state.get("execution_result"),
-        "chart_config": final_state.get("chart_config"),
-        "confidence_score": final_state.get("confidence_score", 0.0),
-        "completed_nodes": final_state.get("completed_nodes", []),
     }
 
 
