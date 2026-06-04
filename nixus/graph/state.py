@@ -107,6 +107,11 @@ class SQLAgentState(TypedDict):
     chart_config: Optional[dict]
     explanation: str
     confidence_score: float
+    # Categorical confidence (5.2): the verdict plus its legible reasoning, so the
+    # API/UI can show WHY confidence is what it is rather than a bare number.
+    confidence: Optional[str]
+    confidence_reasons: list
+    confidence_signals: dict
     current_node: str
     completed_nodes: list
     is_complete: bool

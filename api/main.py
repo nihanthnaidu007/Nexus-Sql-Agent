@@ -310,6 +310,11 @@ async def stream_agent(req: StreamRequest):
                         "chart_config": output.get("chart_config"),
                         "explanation": output.get("explanation"),
                         "confidence_score": output.get("confidence_score", 0.0),
+                        # Categorical confidence (5.2): level + legible reasoning,
+                        # exposed additively so the verdict is not a bare number.
+                        "confidence": output.get("confidence"),
+                        "confidence_reasons": output.get("confidence_reasons", []),
+                        "confidence_signals": output.get("confidence_signals", {}),
                         "correction_attempts": output.get("correction_attempts", 0),
                         "correction_history": output.get("correction_history", []),
                         "served_from_cache": output.get("served_from_cache", False),
