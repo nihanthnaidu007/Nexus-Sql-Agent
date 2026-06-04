@@ -596,7 +596,8 @@ def render_intelligence_strip(state: dict):
     cache = state.get("cache_result") or {}
     cache_hit = cache.get("hit", False)
     fewshots = state.get("similar_examples", [])
-    conf = state.get("confidence_score", 0.0) or 0.0
+    # Prefer the categorical verdict (5.2); fall back to the legacy numeric.
+    conf = state.get("confidence") or state.get("confidence_score", 0.0) or 0.0
     corrections = state.get("correction_attempts", 0) or 0
 
     intent_cls = intent.lower() if intent in ["READ", "WRITE", "SCHEMA_QUESTION"] else "schema"
@@ -637,6 +638,37 @@ def render_intelligence_strip(state: dict):
             <div class="conf-fill {badge_cls}" style="width:{conf*100:.0f}%"></div>
         </div>
         <div style="color:var(--text-muted);font-family:Fira Code,monospace;font-size:0.7rem;">{conf:.1%}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_confidence_banner(state: dict):
+    """Calm, honest uncertainty banner shown when confidence is not HIGH (5.2).
+
+    HIGH needs no banner — the badge already says so. For MEDIUM/LOW we surface
+    the level and the plain-English reasons so reduced confidence is visible with
+    its cause, not buried behind a number.
+    """
+    level = (state.get("confidence") or "").upper()
+    if level not in ("MEDIUM", "LOW"):
+        return
+    reasons = state.get("confidence_reasons") or []
+    label = "Medium confidence" if level == "MEDIUM" else "Low confidence"
+    accent = "#e6a700" if level == "MEDIUM" else "#d9534f"
+    bullets = "".join(
+        f'<li style="margin:2px 0;">{html.escape(str(rsn))}</li>' for rsn in reasons
+    )
+    reasons_html = (
+        f'<ul style="margin:6px 0 0 18px;padding:0;color:var(--text-secondary);'
+        f'font-size:0.78rem;font-family:Outfit,sans-serif;">{bullets}</ul>'
+        if bullets else ""
+    )
+    st.markdown(f"""
+    <div style="border-left:3px solid {accent};background:rgba(230,167,0,0.06);
+                padding:10px 14px;border-radius:6px;margin:10px 0;">
+        <div style="font-weight:600;color:{accent};font-family:Outfit,sans-serif;
+                    font-size:0.85rem;">⚠ {label}</div>
+        {reasons_html}
     </div>
     """, unsafe_allow_html=True)
 
@@ -858,6 +890,9 @@ if st.session_state.result:
     with col_nodes:
         render_node_status(r)
 
+    # Uncertainty banner: visible reason whenever confidence is not HIGH (5.2).
+    render_confidence_banner(r)
+
     # ── Error / scope-refusal card ─────────────────────────────────────────
     _REFUSAL_HEADINGS = {
         "REFUSED_WRITE": "◈ READ-ONLY — WRITE NOT PERMITTED",
@@ -910,7 +945,7 @@ if st.session_state.result:
             sim = (r.get("cache_result") or {}).get("similarity", 0)
             cache_indicator = f'<span class="badge cache" style="margin-left:8px">CACHED {sim:.2f}</span>'
 
-        badge_label2, badge_cls2 = confidence_badge(r.get("confidence_score", 0))
+        badge_label2, badge_cls2 = confidence_badge(r.get("confidence") or r.get("confidence_score", 0))
 
         st.markdown(f"""
         <div class="sql-panel">
