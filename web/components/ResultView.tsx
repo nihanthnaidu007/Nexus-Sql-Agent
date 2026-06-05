@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import type { NormalizedResult } from "@/lib/api";
+import type { LiveProgress, NormalizedResult } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { SqlBlock } from "./SqlBlock";
 import { ResultTable } from "./ResultTable";
 import { ChartView, hasChart } from "./ChartView";
 import { ConfidenceBanner } from "./ConfidenceBanner";
 import { IntelligenceStrip } from "./IntelligenceStrip";
-import { PipelineSection } from "./Pipeline";
+import { LivePipeline, PipelineSection } from "./Pipeline";
+
+const ENTITY_CAP = 8;
 
 /**
  * The ANSWERED happy path: SQL → result → insight → confidence, revealed top to
@@ -164,7 +166,77 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
   );
 }
 
-/** While /run is in flight — show the instrument is working (no frozen page). */
+/**
+ * LIVE run view (Phase 12) — replaces the static skeleton while the SSE stream is
+ * active. The pipeline animates node-by-node (pending → running → done) and the
+ * partial signals the stream carries (intent, entities, cache) populate as they
+ * arrive. On the terminal event the page swaps this for the final AnswerView /
+ * Refusal / Clarification — identical to the /run render.
+ */
+export function LiveRunView({ live }: { live: LiveProgress }) {
+  const entities = live.extractedEntities.slice(0, ENTITY_CAP);
+  const more = live.extractedEntities.length - entities.length;
+  const hasIntel =
+    !!live.intentClass || live.servedFromCache || entities.length > 0;
+
+  return (
+    <div className="results" aria-live="polite">
+      <div className="running">
+        <span className="running-dot" />
+        NIXUS is thinking…
+      </div>
+
+      <section className="section s4 pipeline">
+        <span className="label">Pipeline</span>
+        <LivePipeline
+          completed={live.completed}
+          servedFromCache={live.servedFromCache}
+        />
+      </section>
+
+      {/* The reasoning signals the stream surfaces mid-flight; the FULL strip
+          finalizes on the terminal event (same fields, same component). */}
+      {hasIntel && (
+        <div className="intel" aria-label="What the system is doing">
+          <div className="intel-row">
+            {live.intentClass && (
+              <div className="intel-cell">
+                <span className="intel-key">Intent</span>
+                <span className="intel-val">
+                  <span className="intel-badge">{live.intentClass}</span>
+                </span>
+              </div>
+            )}
+            {live.servedFromCache && (
+              <div className="intel-cell">
+                <span className="intel-key">Cache</span>
+                <span className="intel-val is-hit">cached</span>
+              </div>
+            )}
+          </div>
+          {entities.length > 0 && (
+            <div className="intel-entities">
+              <span className="intel-key">Entities</span>
+              <span className="intel-pills">
+                {entities.map((e, i) => (
+                  <span className="intel-pill" key={`${e}-${i}`}>
+                    {e}
+                  </span>
+                ))}
+                {more > 0 && (
+                  <span className="intel-pill intel-pill-more">+{more} more</span>
+                )}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** While the blocking /run FALLBACK is in flight (streaming failed) — the classic
+ *  skeleton, so the page never freezes and the user still sees motion. */
 export function RunningState() {
   return (
     <div aria-live="polite">

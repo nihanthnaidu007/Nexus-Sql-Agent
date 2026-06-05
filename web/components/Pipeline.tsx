@@ -60,12 +60,42 @@ const CACHE_BYPASS = new Set([
   "check_result",
 ]);
 
-type NodeState = "done" | "skip" | "error" | "idle";
+// done/skip/error/idle are the STATIC end-states (B4). running/pending are the
+// LIVE states added in Phase 12 — only the live SSE view ever produces them, so the
+// static NodeStatus output is byte-for-byte unchanged.
+type NodeState = "done" | "skip" | "error" | "idle" | "running" | "pending";
 
 const STATE_TAG: Partial<Record<NodeState, string>> = {
   skip: "cache",
   error: "error",
 };
+
+const STATE_TITLE: Record<NodeState, string> = {
+  done: "completed",
+  skip: "skipped (served from cache)",
+  error: "run halted here",
+  idle: "not run on this path",
+  running: "running…",
+  pending: "waiting",
+};
+
+/** One node badge — a compact mono chip with a state dot. Shared by the static
+ *  record (NodeStatus) and the live view (LivePipeline) so they speak one visual
+ *  language; only the driving `state` differs. */
+function NodeChip({ label, state }: { label: string; state: NodeState }) {
+  const tag = STATE_TAG[state];
+  return (
+    <span
+      role="listitem"
+      className={`node node-${state}`}
+      title={`${label} — ${STATE_TITLE[state]}`}
+    >
+      <span className="node-dot" aria-hidden />
+      <span className="node-name">{label}</span>
+      {tag && <span className="node-tag">{tag}</span>}
+    </span>
+  );
+}
 
 /**
  * STATIC node-status view (B4). Each of the 14 graph nodes, in order, in its FINAL
@@ -91,36 +121,78 @@ function NodeStatus({ result }: { result: NormalizedResult }) {
   return (
     <div className="nodes-wrap">
       <div className="nodes" role="list" aria-label="Pipeline stages">
-        {NODES.map(({ key, label }) => {
-          const state = stateOf(key);
-          const tag = STATE_TAG[state];
-          return (
-            <span
-              key={key}
-              role="listitem"
-              className={`node node-${state}`}
-              title={`${label} — ${
-                state === "done"
-                  ? "completed"
-                  : state === "skip"
-                    ? "skipped (served from cache)"
-                    : state === "error"
-                      ? "run halted here"
-                      : "not run on this path"
-              }`}
-            >
-              <span className="node-dot" aria-hidden />
-              <span className="node-name">{label}</span>
-              {tag && <span className="node-tag">{tag}</span>}
-            </span>
-          );
-        })}
+        {NODES.map(({ key, label }) => (
+          <NodeChip key={key} label={label} state={stateOf(key)} />
+        ))}
       </div>
       {corrections > 0 && (
         <span className="nodes-note">
           {corrections} correction{corrections === 1 ? "" : "s"}
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * LIVE pipeline (Phase 12) — the SAME node row as NodeStatus, but driven by the SSE
+ * stream as it runs: completed nodes show DONE, the executing node shows RUNNING
+ * (pulsing accent dot), not-yet-reached nodes show PENDING, and a cache hit marks
+ * the bypassed compute nodes SKIPPED the moment check_cache reports the hit.
+ *
+ * The graph streams node COMPLETIONS only (no "started" event), so the running node
+ * is INFERRED as the first not-done, non-branch, non-cache-bypassed node after the
+ * last completed one. Brief mislabels on a branch self-correct on the next event;
+ * the FINAL render uses the static NodeStatus end-state, identical to /run.
+ */
+function liveStateOf(
+  key: string,
+  done: Set<string>,
+  cached: boolean,
+  running: string | null,
+): NodeState {
+  if (done.has(key)) return "done";
+  if (cached && CACHE_BYPASS.has(key)) return "skip";
+  if (key === running) return "running";
+  return "pending";
+}
+
+/** Infer which node is executing now from the highest completed one (see above). */
+function inferRunningNode(done: Set<string>, cached: boolean): string | null {
+  let lastIdx = -1;
+  NODES.forEach((n, i) => {
+    if (done.has(n.key)) lastIdx = Math.max(lastIdx, i);
+  });
+  for (let i = lastIdx + 1; i < NODES.length; i++) {
+    const n = NODES[i];
+    if (done.has(n.key)) continue;
+    if (cached && CACHE_BYPASS.has(n.key)) continue; // bypassed by the cache hit
+    if (n.branch) continue; // conditional (scope reply / self-correct) — skip the guess
+    return n.key;
+  }
+  return null;
+}
+
+export function LivePipeline({
+  completed,
+  servedFromCache,
+}: {
+  completed: string[];
+  servedFromCache: boolean;
+}) {
+  const done = new Set(completed);
+  const running = inferRunningNode(done, servedFromCache);
+  return (
+    <div className="nodes-wrap">
+      <div className="nodes" role="list" aria-label="Pipeline stages (live)">
+        {NODES.map(({ key, label }) => (
+          <NodeChip
+            key={key}
+            label={label}
+            state={liveStateOf(key, done, servedFromCache, running)}
+          />
+        ))}
+      </div>
     </div>
   );
 }

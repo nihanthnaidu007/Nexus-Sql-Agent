@@ -19,12 +19,17 @@
 import { useState } from "react";
 import {
   runQuery,
+  runQueryStreaming,
+  foldProgress,
+  EMPTY_LIVE,
   ApiError,
   type NormalizedResult,
   type ClarificationExchange,
+  type LiveProgress,
+  type RunOptions,
 } from "@/lib/api";
 import { QueryForm } from "@/components/QueryForm";
-import { AnswerView, RunningState } from "@/components/ResultView";
+import { AnswerView, LiveRunView, RunningState } from "@/components/ResultView";
 import { Clarification, ConversationContext } from "@/components/Clarification";
 import { Refusal } from "@/components/Refusal";
 
@@ -40,9 +45,38 @@ export default function Page() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<NormalizedResult | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
+  // Live SSE progress while a run streams (null when not streaming → the /run
+  // fallback skeleton shows instead). The accumulated node/strip state drives
+  // LiveRunView.
+  const [live, setLive] = useState<LiveProgress | null>(null);
   const [error, setError] = useState<{ message: string; traceId?: string } | null>(
     null,
   );
+
+  /**
+   * Run a query LIVE over SSE (the default — it animates the pipeline), with an
+   * AUTOMATIC, SILENT fallback to the blocking /run on ANY streaming failure
+   * (connect error, mid-stream error, inactivity timeout, no terminal result).
+   * The user always gets an answer: streamed, or /run-fallback, or a clean error
+   * only if /run ALSO fails. Never a perpetual "thinking…" hang.
+   */
+  async function runWithFallback(
+    userQuery: string,
+    opts: RunOptions,
+  ): Promise<NormalizedResult> {
+    try {
+      return await runQueryStreaming(
+        userQuery,
+        { onNode: (p) => setLive((prev) => foldProgress(prev ?? EMPTY_LIVE, p)) },
+        opts,
+      );
+    } catch {
+      // Streaming failed — drop the live view and fall back to the proven /run.
+      // (If /run throws too, it propagates to the caller's catch → clean error.)
+      setLive(null);
+      return await runQuery(userQuery, opts);
+    }
+  }
 
   /** A fresh, top-level question — resets any prior clarification thread. */
   async function submitFresh() {
@@ -52,8 +86,9 @@ export default function Page() {
     setError(null);
     setResult(null);
     setThread(null);
+    setLive(EMPTY_LIVE);
     try {
-      const r = await runQuery(q);
+      const r = await runWithFallback(q, {});
       setResult(r);
       // If the system needs clarification, open a thread anchored to this question.
       if (r.isClarification) {
@@ -63,6 +98,7 @@ export default function Page() {
       setError(toError(err));
     } finally {
       setLoading(false);
+      setLive(null);
     }
   }
 
@@ -71,6 +107,7 @@ export default function Page() {
     if (!thread || !result || loading) return;
     setLoading(true);
     setError(null);
+    setLive(EMPTY_LIVE);
     // Record this turn (the question the server just asked + the user's answer).
     const exchanges: ClarificationExchange[] = [
       ...thread.exchanges,
@@ -79,7 +116,7 @@ export default function Page() {
     try {
       // user_query echoes the latest answer; the server folds the full context and
       // decides termination (N=2) itself via clarification_round.
-      const r = await runQuery(answer, {
+      const r = await runWithFallback(answer, {
         sessionId: thread.sessionId,
         clarificationContext: {
           original_question: thread.originalQuestion,
@@ -93,6 +130,7 @@ export default function Page() {
       setError(toError(err));
     } finally {
       setLoading(false);
+      setLive(null);
     }
   }
 
@@ -115,7 +153,9 @@ export default function Page() {
         loading={loading}
       />
 
-      {loading && <RunningState />}
+      {/* While streaming: the LIVE pipeline animates. If streaming fell back to
+          /run (live cleared), the classic skeleton shows during that wait. */}
+      {loading && (live ? <LiveRunView live={live} /> : <RunningState />)}
 
       {/* ACTUAL error (request failed) — distinct from a refusal. */}
       {error && !loading && (

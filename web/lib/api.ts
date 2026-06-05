@@ -316,6 +316,263 @@ export async function runQuery(
   return normalize(data);
 }
 
+// ---- Streaming (Phase 12): live SSE client over POST /api/v1/stream -----------
+//
+// ADDITIVE. runQuery() above (the blocking /api/v1/run path) is unchanged and
+// remains the automatic FALLBACK. This client consumes the EXISTING SSE endpoint
+// (api/main.py:174 `@router.post("/stream")`, an sse_starlette EventSourceResponse)
+// so the pipeline + strip can animate node-by-node as the query runs.
+//
+// The REAL, verified event shape (captured from the live endpoint, not assumed):
+//   · event: node_complete  — one per graph node as it finishes. data carries
+//     { node, completed_nodes, current_node, stream_updates(new lines),
+//       intent_class, extracted_entities, served_from_cache, correction_attempts,
+//       confidence_score, is_complete:false }                  (api/main.py:260-273)
+//   · event: complete       — the TERMINAL event. data is the FULL final graph
+//     state (outcome, generated_sql, execution_result, cache_result, chart_config,
+//     explanation, confidence, trace_url, session_id, reason, scope_message,
+//     clarifying_question, …) — the SAME shape /run returns, so we feed it straight
+//     into normalize() and converge on the identical final render. (api/main.py:295)
+//   · event: error          — { error, is_complete:true } on a server-side failure.
+//                                                              (api/main.py:347)
+// Refusals (REFUSED_*) and NEEDS_CLARIFICATION arrive as the `outcome` on the
+// terminal `complete` event — handled by normalize() exactly like /run.
+//
+// EventSource is GET-only; this is a POST with a body, so we use fetch() + a
+// ReadableStream reader and parse the SSE frames ourselves.
+
+/** One incremental node-completion the live UI consumes (from a `node_complete`
+ *  event). The graph emits node COMPLETIONS only (no explicit "started"), so the
+ *  live view infers the running node from the highest completed one. */
+export interface StreamProgress {
+  node: string; // the node that just completed
+  completedNodes: string[]; // every node done so far, in order
+  currentNode: string; // the last node touched
+  newUpdates: StreamUpdate[]; // ONLY this event's new execution-log lines
+  intentClass: string | null; // populates at parse_intent
+  extractedEntities: string[]; // populates at parse_intent
+  servedFromCache: boolean; // flips true at check_cache on a hit
+  correctionAttempts: number;
+  confidenceScore: number;
+}
+
+/** The accumulated live state the running view renders (folded from StreamProgress
+ *  across events). Kept honest: empty lists / null until the stream supplies them. */
+export interface LiveProgress {
+  completed: string[];
+  servedFromCache: boolean;
+  intentClass: string | null;
+  extractedEntities: string[];
+  updates: StreamUpdate[];
+  correctionAttempts: number;
+}
+
+export interface StreamHandlers {
+  /** Called for each `node_complete` event, in arrival order. */
+  onNode?: (p: StreamProgress) => void;
+}
+
+/** Abort the stream if no bytes arrive for this long — a hung connection must
+ *  yield the /run fallback, never a perpetual "thinking…". Node completions arrive
+ *  every few seconds, so prolonged total silence means a real stall. */
+const STREAM_INACTIVITY_MS = 60_000;
+
+/** POST a question to the SSE /api/v1/stream endpoint and drive `handlers.onNode`
+ *  live as nodes finish, resolving with the SAME NormalizedResult the /run path
+ *  produces on the terminal `complete` event.
+ *
+ *  THROWS (so the caller can fall back to runQuery) on any streaming failure:
+ *  connect error, non-2xx, mid-stream `error` event, inactivity timeout, or a
+ *  stream that ends without a terminal result. It never hangs. */
+export async function runQueryStreaming(
+  userQuery: string,
+  handlers: StreamHandlers = {},
+  opts: RunOptions = {},
+): Promise<NormalizedResult> {
+  const body: RunRequest = {
+    user_query: userQuery,
+    session_id: opts.sessionId ?? "",
+  };
+  if (opts.clarificationContext) {
+    body.clarification_context = opts.clarificationContext;
+    body.clarification_round = opts.clarificationRound ?? 0;
+  }
+
+  // Inactivity watchdog: rearmed on every chunk; firing aborts the fetch, which
+  // rejects the in-flight read and propagates out so the caller falls back.
+  const controller = new AbortController();
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  const armWatchdog = () => {
+    if (watchdog) clearTimeout(watchdog);
+    watchdog = setTimeout(() => controller.abort(), STREAM_INACTIVITY_MS);
+  };
+
+  let res: Response;
+  try {
+    armWatchdog();
+    res = await fetch(`${API_BASE_URL}/api/v1/stream`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (watchdog) clearTimeout(watchdog);
+    throw new ApiError(
+      `stream connect failed: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+
+  if (!res.ok || !res.body) {
+    if (watchdog) clearTimeout(watchdog);
+    throw new ApiError(
+      `stream HTTP ${res.status} ${res.statusText}`,
+      res.status,
+    );
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: NormalizedResult | null = null;
+  let streamError: string | null = null;
+
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      armWatchdog(); // got bytes → the connection is alive; reset the hang timer
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE frames are separated by a blank line. Process every COMPLETE frame in
+      // the buffer; a partial trailing frame stays buffered for the next chunk.
+      let frame: { frame: string; rest: string } | null;
+      while ((frame = nextSseFrame(buffer))) {
+        buffer = frame.rest;
+        const ev = parseSseFrame(frame.frame);
+        if (!ev) continue; // keep-alive / comment-only frame
+
+        if (ev.event === "node_complete") {
+          const d = safeJsonObject(ev.data);
+          if (d) handlers.onNode?.(toStreamProgress(d));
+        } else if (ev.event === "complete") {
+          const d = safeJsonObject(ev.data);
+          if (d) finalResult = normalize(d as unknown as NixusResponse);
+        } else if (ev.event === "error") {
+          const d = safeJsonObject(ev.data);
+          streamError =
+            (d && typeof d.error === "string" ? d.error : null) ??
+            "stream reported an error";
+        }
+      }
+    }
+  } finally {
+    if (watchdog) clearTimeout(watchdog);
+    try {
+      reader.releaseLock();
+    } catch {
+      /* reader already released on abort — ignore */
+    }
+  }
+
+  if (streamError) throw new ApiError(streamError);
+  // A stream that closed without a terminal `complete` is unusable → fall back.
+  if (!finalResult) throw new ApiError("stream ended without a terminal result");
+  return finalResult;
+}
+
+/** Carve the first COMPLETE SSE frame off the buffer (everything before the first
+ *  blank-line separator), returning it plus the remainder, or null if no full
+ *  frame is buffered yet. Tolerates \n\n and \r\n\r\n line endings. */
+function nextSseFrame(buf: string): { frame: string; rest: string } | null {
+  const m = buf.match(/\r?\n\r?\n/);
+  if (!m || m.index === undefined) return null;
+  return { frame: buf.slice(0, m.index), rest: buf.slice(m.index + m[0].length) };
+}
+
+/** Parse one SSE frame's lines into { event, data }. Concatenates multiple `data:`
+ *  lines per the spec, strips one optional leading space, and ignores comment
+ *  (`:`-prefixed keep-alive) lines and unknown fields. */
+function parseSseFrame(frame: string): { event: string; data: string } | null {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const raw of frame.split(/\r?\n/)) {
+    if (raw === "" || raw.startsWith(":")) continue; // blank / comment keep-alive
+    const colon = raw.indexOf(":");
+    const field = colon === -1 ? raw : raw.slice(0, colon);
+    let val = colon === -1 ? "" : raw.slice(colon + 1);
+    if (val.startsWith(" ")) val = val.slice(1);
+    if (field === "event") event = val;
+    else if (field === "data") dataLines.push(val);
+  }
+  if (dataLines.length === 0) return null;
+  return { event, data: dataLines.join("\n") };
+}
+
+function safeJsonObject(s: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A `node_complete` event's data → the UI-facing progress shape (honest defaults). */
+function toStreamProgress(d: Record<string, unknown>): StreamProgress {
+  return {
+    node: typeof d.node === "string" ? d.node : "",
+    completedNodes: Array.isArray(d.completed_nodes)
+      ? d.completed_nodes.filter((n): n is string => typeof n === "string")
+      : [],
+    currentNode: typeof d.current_node === "string" ? d.current_node : "",
+    newUpdates: Array.isArray(d.stream_updates)
+      ? (d.stream_updates as StreamUpdate[])
+      : [],
+    intentClass:
+      typeof d.intent_class === "string" && d.intent_class
+        ? d.intent_class
+        : null,
+    extractedEntities: Array.isArray(d.extracted_entities)
+      ? d.extracted_entities.filter((e): e is string => typeof e === "string")
+      : [],
+    servedFromCache: !!d.served_from_cache,
+    correctionAttempts:
+      typeof d.correction_attempts === "number" ? d.correction_attempts : 0,
+    confidenceScore:
+      typeof d.confidence_score === "number" ? d.confidence_score : 0,
+  };
+}
+
+/** Fold a StreamProgress event into the accumulated LiveProgress the running view
+ *  renders. `completed_nodes` is cumulative on the wire, so it replaces; partial
+ *  signals (intent/cache/entities) latch as they first appear. */
+export function foldProgress(prev: LiveProgress, p: StreamProgress): LiveProgress {
+  return {
+    completed: p.completedNodes.length ? p.completedNodes : prev.completed,
+    servedFromCache: prev.servedFromCache || p.servedFromCache,
+    intentClass: p.intentClass ?? prev.intentClass,
+    extractedEntities: p.extractedEntities.length
+      ? p.extractedEntities
+      : prev.extractedEntities,
+    updates: [...prev.updates, ...p.newUpdates],
+    correctionAttempts: Math.max(prev.correctionAttempts, p.correctionAttempts),
+  };
+}
+
+/** The zero state for a fresh live run (before the first node event arrives). */
+export const EMPTY_LIVE: LiveProgress = {
+  completed: [],
+  servedFromCache: false,
+  intentClass: null,
+  extractedEntities: [],
+  updates: [],
+  correctionAttempts: 0,
+};
+
 /** Collapse the raw graph state into the UI-ready shape. */
 export function normalize(raw: NixusResponse): NormalizedResult {
   const outcome = raw.outcome ?? null;
