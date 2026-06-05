@@ -88,6 +88,35 @@ export interface ChartConfig {
 }
 
 /**
+ * One self-correction the agent made (nixus/graph/nodes/self_correct.py:89-95):
+ * the SQL that failed, why it failed, the model's diagnosis, and the rewritten SQL.
+ *
+ * This list is EMPTY on a clean first-pass query — the COMMON case on this
+ * benchmark (the graph answers most questions without ever entering self_correct).
+ * The UI presents that empty case as a POSITIVE clean-pass signal, never an error.
+ */
+export interface CorrectionEntry {
+  attempt: number;
+  failed_sql: string;
+  error_message: string;
+  fix_reasoning: string;
+  corrected_sql: string;
+}
+
+/**
+ * One per-node status line the graph emits as it executes (the nodes append to
+ * state["stream_updates"], e.g. nixus/graph/nodes/parse_intent.py:64-68). Verified
+ * POPULATED on the /run path (not only /stream): a clean run returns ~12 entries,
+ * a cache hit ~5. `status` is "done" | "error" | "running" across the nodes.
+ */
+export interface StreamUpdate {
+  timestamp: string;
+  node: string;
+  message: string;
+  status: string; // "done" | "error" | "running"
+}
+
+/**
  * The outcome discriminator (nixus/graph/scope.py:65-69). Every response carries
  * exactly one of these — it decides whether the UI shows an answer, a follow-up
  * question, or a refusal.
@@ -124,6 +153,14 @@ export interface NixusResponse {
   extracted_entities: string[] | null; // entity strings (may be [] for simple queries)
   similar_examples: unknown[] | null; // few-shots loaded — we surface only the COUNT
   correction_attempts: number | null; // self-correction loops (0 = clean first pass; cap 3)
+  // Execution record (Phase 11) — the pipeline's final end-state, all already
+  // returned by /run (nixus/graph/state.py:115-121). The STATIC node view, the
+  // self-correction log, and the agent execution log read these read-only.
+  completed_nodes: string[]; // the nodes the graph actually traversed, in order
+  current_node: string | null; // the last node touched (the failing node on error)
+  is_complete: boolean; // did the run reach a terminal node
+  correction_history: CorrectionEntry[]; // [] on a clean first pass (common case)
+  stream_updates: StreamUpdate[]; // per-node log lines — populated on /run
   // Clarification path
   clarifying_question: string | null;
   // Refusal path
@@ -197,6 +234,15 @@ export interface NormalizedResult {
   traceUrl: string | null; // LangSmith success-path trace; null when tracing is off
   // The backend's chart decision, carried through verbatim for ChartView to render.
   chartConfig: ChartConfig | null;
+  // ---- Execution record (Phase 11): the STATIC end-state of the pipeline run ---
+  // What the graph did, surfaced read-only for the node-status view, the self-
+  // correction log, and the agent execution log. Emptiness is honest and common
+  // (no corrections on a clean pass) — the UI omits empty panels, never fakes one.
+  completedNodes: string[]; // nodes the graph traversed (DONE); cache hits skip some
+  currentNode: string | null; // last node touched — the failing node on an error
+  isComplete: boolean; // reached a terminal node
+  correctionHistory: CorrectionEntry[]; // [] on a clean first pass (the common case)
+  streamUpdates: StreamUpdate[]; // per-node log lines, populated on /run
   // Non-answer text
   clarifyingQuestion: string;
   refusalReason: string;
@@ -336,6 +382,19 @@ export function normalize(raw: NixusResponse): NormalizedResult {
       typeof exec?.execution_time_ms === "number" ? exec.execution_time_ms : null,
     traceUrl: raw.trace_url ?? null,
     chartConfig: raw.chart_config ?? null,
+    // Execution record — kept honest to the real shape: lists default to [] (never
+    // null), so the views can treat "no data" as the clean/empty case uniformly.
+    completedNodes: Array.isArray(raw.completed_nodes)
+      ? raw.completed_nodes.filter((n): n is string => typeof n === "string")
+      : [],
+    currentNode: typeof raw.current_node === "string" ? raw.current_node : null,
+    isComplete: !!raw.is_complete,
+    correctionHistory: Array.isArray(raw.correction_history)
+      ? (raw.correction_history as CorrectionEntry[])
+      : [],
+    streamUpdates: Array.isArray(raw.stream_updates)
+      ? (raw.stream_updates as StreamUpdate[])
+      : [],
     clarifyingQuestion: raw.clarifying_question ?? "",
     refusalReason: raw.reason ?? raw.scope_message ?? raw.explanation ?? "",
     errorText: raw.error ?? "",

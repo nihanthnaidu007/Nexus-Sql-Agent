@@ -229,6 +229,7 @@ body {
 .section.s1 { animation-delay: 0.10s; }
 .section.s2 { animation-delay: 0.18s; }
 .section.s3 { animation-delay: 0.26s; }
+.section.s4 { animation-delay: 0.34s; }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(10px); }
@@ -744,6 +745,275 @@ td.num {
   border-style: dashed;
 }
 
+/* ----- Pipeline (Phase 11): the run's execution RECORD, static end-state ------
+   The node-status view + self-correction log + agent execution log, sitting below
+   Confidence as a SECONDARY record of what the graph did. Calm ledger badges, one
+   shared accent family — deliberately NOT Streamlit's neon node pulse (the LIVE
+   animated progression is Phase 12). Emptiness handled honestly, never an empty box. */
+
+/* The static node-status row + its correction count. */
+.nodes-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* One node badge — a compact mono chip with a state dot. Restrained, not a button. */
+.node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 3px 9px;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-sunken);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.node-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-faint);
+}
+
+/* DONE — ran and finished. The established "good" tone (muted olive). */
+.node-done .node-dot { background: var(--ok); }
+
+/* SKIPPED (CACHE) — bypassed by a cache hit short-circuiting the pipeline. Quiet,
+   dashed, hollow dot: clearly neither done nor an error. */
+.node-skip {
+  color: var(--ink-faint);
+  background: transparent;
+  border-style: dashed;
+}
+.node-skip .node-dot {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+  border: 1px solid var(--ink-faint);
+}
+
+/* ERROR — the run halted at this node. The single sharp accent (oxblood). */
+.node-error {
+  color: var(--accent-deep);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+.node-error .node-dot { background: var(--accent); }
+
+/* IDLE — a conditional branch this run didn't take (scope reply / self-correct on
+   a clean answer). Dimmed so it reads as "not part of this run", not pending. */
+.node-idle {
+  color: var(--ink-faint);
+  background: transparent;
+  border-color: var(--rule);
+  opacity: 0.55;
+}
+.node-idle .node-dot {
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+}
+
+/* The small state suffix on non-done badges ("cache" / "error"). */
+.node-tag {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+/* Correction count beside the node row — ochre, the strip/banner's "signal" tone. */
+.nodes-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--warn);
+}
+
+/* The clean-pass positive line (empty correction history — the COMMON case). A
+   quiet olive mark + plain statement: a clean first pass is a GOOD signal. */
+.pipe-clean {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 16px 0 0;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.pipe-clean-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+
+/* ----- Pipeline expanders (self-correction log + execution log) ------------- */
+
+.expander {
+  margin-top: 16px;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+
+.expander-summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  transition: color 0.15s ease;
+}
+
+.expander-summary::-webkit-details-marker { display: none; }
+
+/* A single restrained caret in the accent — the only motion here (no neon pulse). */
+.expander-summary::before {
+  content: "▸";
+  color: var(--accent);
+  font-size: 10px;
+  transition: transform 0.15s ease;
+}
+
+.expander[open] > .expander-summary::before { transform: rotate(90deg); }
+
+.expander-summary:hover { color: var(--ink); }
+
+/* Self-correction log — each attempt: what failed, the diagnosis, the fixed SQL. */
+.correction-log {
+  margin: 0;
+  padding: 4px 14px 16px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.correction-item {
+  border-left: 2px solid var(--warn);
+  padding-left: 14px;
+}
+
+.correction-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.correction-attempt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+.correction-error {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--low);
+}
+
+.correction-why {
+  margin: 8px 0 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* The corrected SQL — the dark slab, but with the OK accent (it's the fix). */
+.correction-sql {
+  margin: 10px 0 0;
+  background: var(--slab);
+  color: #e7e0cf;
+  border-left: 3px solid var(--ok);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  padding: 12px 14px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Agent execution log — [time] [node] message, one calm line per emitted step. */
+.exec-log {
+  margin: 0;
+  padding: 2px 0 6px;
+  list-style: none;
+}
+
+.exec-line {
+  display: grid;
+  grid-template-columns: 60px 116px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 14px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  border-top: 1px solid var(--rule);
+}
+
+.exec-log .exec-line:first-child { border-top: none; }
+
+.exec-time {
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The node name carries a status dot — olive (done), oxblood (error), ochre
+   (running). Color-coded, never neon. */
+.exec-node {
+  position: relative;
+  padding-left: 15px;
+  color: var(--ink);
+}
+
+.exec-node::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.45em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.exec-error .exec-node::before { background: var(--accent); }
+.exec-running .exec-node::before { background: var(--warn); }
+
+.exec-msg {
+  color: var(--ink-soft);
+  word-break: break-word;
+}
+
+.exec-error .exec-msg { color: var(--accent-deep); }
+
 /* ----- Loading state (instrument working) ----------------------------------- */
 
 .running {
@@ -985,4 +1255,11 @@ td.num {
     gap: 14px;
   }
   .intel-row .intel-cell:first-child { border-top: none; }
+
+  /* The execution log stacks: time/node on one line, message wrapping below. */
+  .exec-line {
+    grid-template-columns: 60px 1fr;
+    gap: 2px 12px;
+  }
+  .exec-msg { grid-column: 1 / -1; }
 }

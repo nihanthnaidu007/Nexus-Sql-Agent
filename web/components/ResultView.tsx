@@ -8,6 +8,7 @@ import { ResultTable } from "./ResultTable";
 import { ChartView, hasChart } from "./ChartView";
 import { ConfidenceBanner } from "./ConfidenceBanner";
 import { IntelligenceStrip } from "./IntelligenceStrip";
+import { PipelineSection } from "./Pipeline";
 
 /**
  * The ANSWERED happy path: SQL → result → insight → confidence, revealed top to
@@ -155,6 +156,10 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
           cached={result.servedFromCache}
         />
       </section>
+
+      {/* The execution RECORD — what the pipeline did, end-state (Phase 11). Static,
+          subordinate to the answer above; the LIVE node animation is Phase 12. */}
+      <PipelineSection result={result} />
     </div>
   );
 }
