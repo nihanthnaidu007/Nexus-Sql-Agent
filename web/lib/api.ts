@@ -62,6 +62,32 @@ export interface CacheResult {
 }
 
 /**
+ * The chart the backend DECIDED for this result (nixus/graph/nodes/classify_chart.py).
+ * The frontend RE-PLOTS from these primitives (chart_type + columns) over the result
+ * rows; it deliberately does NOT parse `plotly_json`. That blob carries a neon-cyan
+ * DARK theme (wrong for this warm-paper UI) and serializes integer y-values as a
+ * binary typed array ({"dtype":"i1","bdata":"…"}) — re-plotting from the primitives
+ * is both lighter and on-brand.
+ *
+ * chart_type observed live: "bar" | "line" | "pie" | "scatter" | "none". The
+ * classifier picks line (date+numeric), pie (small positive distribution), bar
+ * (categorical+numeric), scatter (≥2 numeric), or none (no/insufficient/unmappable
+ * data). On the "none" path x/y/color are null and plotly_json is null.
+ */
+export type ChartType = "bar" | "line" | "pie" | "scatter" | "none";
+
+export interface ChartConfig {
+  chart_type: ChartType | string;
+  x_column: string | null;
+  y_column: string | null;
+  color_column: string | null;
+  title: string;
+  reasoning: string;
+  /** Present on the wire but intentionally unused by the renderer (see above). */
+  plotly_json: string | null;
+}
+
+/**
  * The outcome discriminator (nixus/graph/scope.py:65-69). Every response carries
  * exactly one of these — it decides whether the UI shows an answer, a follow-up
  * question, or a refusal.
@@ -84,6 +110,8 @@ export interface NixusResponse {
   execution_result: ExecutionResult | null;
   cache_result: CacheResult | null;
   served_from_cache: boolean;
+  // The backend's chart decision for this result (may be null on non-answer paths).
+  chart_config: ChartConfig | null;
   explanation: string;
   // Categorical confidence (nixus/graph/state.py:112-114)
   confidence: string | null; // "HIGH" | "MEDIUM" | "LOW"
@@ -147,6 +175,8 @@ export interface NormalizedResult {
   confidence: string | null;
   confidenceReasons: string[];
   servedFromCache: boolean;
+  // The backend's chart decision, carried through verbatim for ChartView to render.
+  chartConfig: ChartConfig | null;
   // Non-answer text
   clarifyingQuestion: string;
   refusalReason: string;
@@ -262,6 +292,7 @@ export function normalize(raw: NixusResponse): NormalizedResult {
     confidence: raw.confidence ?? null,
     confidenceReasons: raw.confidence_reasons ?? [],
     servedFromCache: !!raw.served_from_cache,
+    chartConfig: raw.chart_config ?? null,
     clarifyingQuestion: raw.clarifying_question ?? "",
     refusalReason: raw.reason ?? raw.scope_message ?? raw.explanation ?? "",
     errorText: raw.error ?? "",
