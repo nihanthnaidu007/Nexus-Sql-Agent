@@ -1,5 +1,5 @@
 /**
- * NIXUS SQL API client (Phase 8.1).
+ * NIXUS SQL API client (Phase 8.1 → extended in 8.3).
  *
  * Wired to the REAL, detected backend contract — nothing here is assumed:
  *
@@ -8,6 +8,14 @@
  *              (api/main.py:138 `class RunRequest`)
  *   Response : the raw final LangGraph state dict returned by run_query()
  *              (nixus/services/query_service.py:33 → nixus/graph/state.py:78 SQLAgentState)
+ *
+ * 8.3 note: the CONTRACT is unchanged. The clarification round-trip added in 8.3
+ * only POPULATES request fields the RunRequest model already declares
+ * (session_id + clarification_context + clarification_round, api/main.py:138-144).
+ * The folding rule is the backend's: clarification_context carries
+ * {original_question, prior_clarifications:[{question, answer}]}, the latest answer
+ * is ALSO echoed in user_query, and the server decides N=2 termination itself
+ * (nixus/graph/scope.py: CLARIFICATION_ROUND_CAP=2). We send; the server decides.
  *
  * Streaming: the API DOES expose an SSE endpoint (POST /api/v1/stream, an
  * sse_starlette EventSourceResponse at api/main.py:174). 8.1 deliberately uses
@@ -92,11 +100,31 @@ export interface NixusResponse {
   [key: string]: unknown;
 }
 
+/** One clarification turn: the question the server asked + the user's answer. */
+export interface ClarificationExchange {
+  question: string;
+  answer: string;
+}
+
+/** The stateless clarification round-trip carried back in on a follow-up
+ *  (api/main.py:132 `class ClarificationContext`). */
+export interface ClarificationContext {
+  original_question: string;
+  prior_clarifications: ClarificationExchange[];
+}
+
 export interface RunRequest {
   user_query: string;
   session_id?: string;
-  clarification_context?: unknown;
+  clarification_context?: ClarificationContext;
   clarification_round?: number;
+}
+
+/** Options for threading a clarified follow-up into the SAME conversation. */
+export interface RunOptions {
+  sessionId?: string;
+  clarificationContext?: ClarificationContext;
+  clarificationRound?: number;
 }
 
 /** A normalized, UI-ready view derived from the raw response. The point of this
@@ -108,6 +136,9 @@ export interface NormalizedResult {
   isRefusal: boolean;
   isClarification: boolean;
   isAnswer: boolean;
+  // The server-assigned session id — threaded back on a clarified follow-up so the
+  // conversation continues rather than starting fresh.
+  sessionId: string;
   sql: string;
   rows: Record<string, unknown>[];
   columns: string[];
@@ -135,12 +166,24 @@ export class ApiError extends Error {
   }
 }
 
-/** POST a question to the real /api/v1/run endpoint and await the full result. */
+/** POST a question to the real /api/v1/run endpoint and await the full result.
+ *
+ *  For a fresh query, call `runQuery(text)`. For a clarified follow-up, pass the
+ *  threaded `opts` (the session id + accumulated clarification context + round) so
+ *  the backend continues the SAME conversation. `userQuery` on a follow-up is the
+ *  user's latest answer (the server also folds it via clarification_context). */
 export async function runQuery(
   userQuery: string,
-  sessionId = "",
+  opts: RunOptions = {},
 ): Promise<NormalizedResult> {
-  const body: RunRequest = { user_query: userQuery, session_id: sessionId };
+  const body: RunRequest = {
+    user_query: userQuery,
+    session_id: opts.sessionId ?? "",
+  };
+  if (opts.clarificationContext) {
+    body.clarification_context = opts.clarificationContext;
+    body.clarification_round = opts.clarificationRound ?? 0;
+  }
 
   let res: Response;
   try {
@@ -210,6 +253,7 @@ export function normalize(raw: NixusResponse): NormalizedResult {
     isRefusal,
     isClarification,
     isAnswer,
+    sessionId: raw.session_id ?? "",
     sql: raw.generated_sql ?? cache?.cached_sql ?? "",
     rows,
     columns,

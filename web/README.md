@@ -42,5 +42,5 @@ API already allows `http://localhost:3000`.
 ## In docker-compose
 
 Built as the `web` service: `docker compose up -d --build` then open
-`http://localhost:3000`. The Streamlit `ui` service is left present-but-unused in
-8.1 and is retired in 8.3.
+`http://localhost:3000`. This is the only frontend — the legacy Streamlit `ui`
+service was retired in 8.3 once React fully replaced it.

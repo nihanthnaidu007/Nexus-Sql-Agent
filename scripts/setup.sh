@@ -87,8 +87,8 @@ for i in $(seq 1 60); do
 ─────────────────────────────────────────
   NIXUS is running — self-contained SaaS sample (read-only target).
   Try it:
+    open http://localhost:3000             # React UI
     open http://localhost:8000/docs        # API + Swagger
-    open http://localhost:8501             # Streamlit UI
     nixus query "how many organizations are there?"
 ─────────────────────────────────────────
 EOF

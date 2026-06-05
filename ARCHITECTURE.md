@@ -8,10 +8,10 @@ the gap is called out with the phase that closes it.
 ## Core principle
 
 There is **one framework-agnostic core** (`nixus/`) and several **thin adapters**
-around it (`api/`, `ui/`, and the future `cli/` and React `frontend/`). The core
-contains all the logic for understanding a question, retrieving schema/examples,
-generating and validating SQL, executing it, and explaining the result. It knows
-nothing about HTTP, Streamlit, or any transport.
+around it (`api/`, the React `web/` frontend, and the `cli/`). The core contains
+all the logic for understanding a question, retrieving schema/examples, generating
+and validating SQL, executing it, and explaining the result. It knows nothing about
+HTTP or any transport.
 
 Why: the same query logic must be runnable from the FastAPI service today, from a
 CLI (Phase 7), and from a React backend (Phase 8) without duplication. That only
@@ -43,7 +43,7 @@ nixus/                     the framework-agnostic core
 api/                       FastAPI adapter (HTTP shell only): routes (all under /api/v1),
                            request/response models, SSE streaming, lifespan (checkpointer +
                            graph build), and context.py (RequestContext: per-request identity)
-ui/                        Streamlit adapter (app.py)
+web/                       React (Next.js) frontend — the UI adapter (App Router; lib/api.ts client)
 eval/                      benchmark + behavioral tests (run_benchmark.py, test_*.py, conftest.py)
 scripts/                   operational scripts: init_db, seed_*, migrate_chinook (Chinook retired in 2.4)
 ```
@@ -92,9 +92,9 @@ through it** rather than re-implementing the graph-invocation sequence.
 ## The nine rules every later prompt obeys
 
 1. **One-way dependency direction.** Adapters import `nixus.*`. The core never
-   imports `api`/`ui`/`cli`/`frontend`, and never imports `fastapi`/`starlette`/
-   `streamlit`. (Enforced check: importing `nixus.services.query_service` must not
-   pull `fastapi` into `sys.modules`.)
+   imports `api`/`web`/`cli`, and never imports `fastapi`/`starlette`. (Enforced
+   check: importing `nixus.services.query_service` must not pull `fastapi` into
+   `sys.modules`.)
 2. **SQL lives only in `nixus/db/`.** No raw SQL anywhere else.
 3. **Route handlers contain no business logic.** A handler parses the request,
    calls a service, and shapes the HTTP response. ~15 lines is the smell threshold.

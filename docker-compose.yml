@@ -56,25 +56,8 @@ services:
       db:
         condition: service_healthy
 
-  # Streamlit UI — present-but-UNUSED as of Phase 8.1. The React `web` service
-  # below is the real frontend now. Streamlit source + this service are kept (not
-  # deleted) until 8.3 formally retires them. Still reachable at :8501 if needed.
-  ui:
-    build: .
-    command: >
-      streamlit run ui/app.py
-      --server.port 8501
-      --server.address 0.0.0.0
-      --browser.gatherUsageStats false
-    env_file: .env
-    environment:
-      API_BASE_URL: http://api:8000
-    ports:
-      - "8501:8501"
-    depends_on:
-      - api
-
-  # React (Next.js) frontend — Phase 8. This is the UI the one-command demo opens.
+  # React (Next.js) frontend — Phase 8. The single UI the one-command demo opens
+  # (the legacy Python UI service was retired once React fully replaced it).
   # The browser runs on the HOST, so it calls the API at http://localhost:8000
   # (NOT http://api:8000 — that name only resolves inside the compose network).
   # NEXT_PUBLIC_* is inlined at BUILD time, so the URL is passed as a build ARG.

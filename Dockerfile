@@ -14,4 +14,4 @@ COPY . .
 
 RUN chmod +x scripts/entrypoint.sh
 
-EXPOSE 8000 8501
+EXPOSE 8000

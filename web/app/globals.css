@@ -22,7 +22,8 @@
   --accent-deep: #842513;
   --accent-tint: #f0e3d4;
   --ok: #4f6f3a; /* muted olive for "good" states (confidence/cache) */
-  --warn: #9a6b16;
+  --warn: #9a6b16; /* ochre — medium confidence (a signal, not alarm) */
+  --low: #9a5b3b; /* muted terracotta — low confidence (honest, NOT alarm red) */
 
   --maxw: 940px;
   --gap: 28px;
@@ -391,36 +392,72 @@ td.num {
   border-radius: 3px;
 }
 
-/* ----- Confidence tag (kept simple per 8.2; full banner is 8.3) ------------- */
+/* ----- Confidence banner (8.3: level + legible reasons; honesty, not alarm) -- */
 
-.meta-row {
+.conf-banner {
+  border: 1px solid var(--rule-strong);
+  border-left-width: 4px;
+  background: var(--paper-raised);
+  padding: 16px 20px;
+}
+
+/* Level accent — calm in all three cases. LOW is honest, never alarm-red. */
+.conf-banner.conf-high { border-left-color: var(--ok); }
+.conf-banner.conf-medium { border-left-color: var(--warn); }
+.conf-banner.conf-low { border-left-color: var(--low); }
+.conf-banner.conf-unknown { border-left-color: var(--ink-faint); }
+
+.conf-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
+  gap: 10px;
+}
+
+.conf-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.conf-high .conf-marker { background: var(--ok); }
+.conf-medium .conf-marker { background: var(--warn); }
+.conf-low .conf-marker { background: var(--low); }
+.conf-unknown .conf-marker { background: var(--ink-faint); }
+
+.conf-level {
   font-family: var(--font-mono);
   font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.conf-lede {
+  margin: 10px 0 0;
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.5;
   color: var(--ink-soft);
 }
 
-.conf {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  letter-spacing: 0.04em;
+.conf-reasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink);
 }
 
-.conf .dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
+.conf-reasons li {
+  margin-top: 4px;
 }
 
-.conf-high .dot { background: var(--ok); }
-.conf-medium .dot { background: var(--warn); }
-.conf-low .dot { background: var(--accent); }
-.conf-unknown .dot { background: var(--ink-faint); }
+.conf-reasons li::marker {
+  color: var(--accent);
+}
 
 .tag {
   font-family: var(--font-mono);
@@ -484,7 +521,8 @@ td.num {
   100% { background-position: 0 0; }
 }
 
-/* ----- Notices: refusal / clarification / error (minimal per 8.2) ----------- */
+/* ----- Notice: the request-failed error panel (refusal/clarification are
+   designed components below, not notices) ------------------------------------ */
 
 .notice {
   margin-top: 52px;
@@ -509,13 +547,8 @@ td.num {
   color: var(--ink);
 }
 
-.notice.refusal { border-color: var(--accent); }
-.notice.refusal .notice-label { color: var(--accent); }
-.notice.refusal { box-shadow: 4px 4px 0 var(--accent-tint); }
-
-.notice.clarify { border-color: var(--warn); }
-.notice.clarify .notice-label { color: var(--warn); }
-
+/* The error notice is the ONLY .notice variant — a real request failure. It is
+   deliberately distinct from a refusal (which is a designed, calm outcome below). */
 .notice.error { border-color: var(--accent-deep); background: #f3e4df; }
 .notice.error .notice-label { color: var(--accent-deep); }
 .notice .trace {
@@ -523,6 +556,131 @@ td.num {
   font-size: 12px;
   color: var(--ink-soft);
   margin-top: 8px;
+}
+
+/* ----- Refusal (a deliberate, legitimate outcome — NOT an error) ------------ */
+
+.refusal {
+  margin-top: 52px;
+  border: 1px solid var(--rule-strong);
+  border-top: 3px solid var(--accent);
+  background: var(--paper-raised);
+  padding: 26px 28px;
+  max-width: 60ch;
+  animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.refusal-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.refusal-headline {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: 23px;
+  line-height: 1.25;
+  color: var(--ink);
+  margin: 10px 0 0;
+}
+
+.refusal-reason {
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 14px 0 0;
+}
+
+.refusal-note {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+/* ----- Clarification round-trip (the system asking, not failing) ------------ */
+
+.clarify {
+  margin-top: 52px;
+  animation: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.clarify-ask {
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--warn);
+  background: var(--paper-raised);
+  padding: 20px 22px;
+  margin-top: 16px;
+}
+
+.clarify-kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--warn);
+}
+
+.clarify-question {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-size: 19px;
+  line-height: 1.45;
+  color: var(--ink);
+  margin: 10px 0 16px;
+}
+
+.clarify-field {
+  background: var(--paper);
+}
+
+/* ----- Conversation context (what is being answered) ------------------------ */
+
+.convo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread-context {
+  margin-top: 48px;
+}
+
+.convo-turn {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding-left: 12px;
+  border-left: 2px solid var(--rule);
+}
+
+.convo-turn.convo-ask {
+  border-left-color: var(--warn);
+}
+
+.convo-who {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  flex: none;
+  width: 96px;
+}
+
+.convo-text {
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--ink);
 }
 
 /* ----- Responsive ----------------------------------------------------------- */

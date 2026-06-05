@@ -24,10 +24,9 @@ trap "echo '◈ Shutting down...'; kill $API_PID 2>/dev/null" EXIT INT TERM
 echo "◈ Waiting for API to be ready..."
 sleep 4
 
-echo "◈ Starting Streamlit UI (port 8501)..."
-streamlit run ui/app.py \
-    --server.port 8501 \
-    --server.address 0.0.0.0 \
-    --browser.gatherUsageStats false
+echo "◈ API ready on http://localhost:8000"
+echo "◈ For the React UI, run it alongside the API:"
+echo "    docker compose up -d --build web   # → http://localhost:3000"
+echo "    # or, for local dev:  cd web && npm install && npm run dev"
 
 wait $API_PID

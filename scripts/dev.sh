@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Launch DB (docker), API (uvicorn), and UI (streamlit) on auto-picked free ports.
-# Override any of: DB_HOST_PORT, API_PORT, UI_PORT
+# Launch DB (docker), API (uvicorn), and the React UI (Next.js dev) on auto-picked
+# free ports. Override any of: DB_HOST_PORT, API_PORT, UI_PORT
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -16,6 +16,10 @@ UI_PORT="${UI_PORT:-$(free_port)}"
 export DB_HOST_PORT API_PORT UI_PORT
 export DATABASE_URL="postgresql://nixus:nixus@localhost:${DB_HOST_PORT}/nixus_sql"
 export API_BASE_URL="http://localhost:${API_PORT}"
+# The browser-side React app calls the API directly; allow its (auto-picked) origin
+# through CORS and tell the Next dev server where the API is.
+export ALLOWED_ORIGINS="http://localhost:${UI_PORT},http://localhost:3000"
+export NEXT_PUBLIC_API_URL="${API_BASE_URL}"
 
 cat <<EOF
 ─────────────────────────────────────────
@@ -55,10 +59,7 @@ trap cleanup EXIT INT TERM
 echo "◈ Launching FastAPI on :${API_PORT}..."
 uvicorn api.main:app --host 127.0.0.1 --port "$API_PORT" --reload &
 
-echo "◈ Launching Streamlit on :${UI_PORT}..."
-streamlit run ui/app.py \
-  --server.port "$UI_PORT" \
-  --server.headless true \
-  --browser.gatherUsageStats false &
+echo "◈ Launching React (Next.js) dev server on :${UI_PORT}..."
+( cd web && npm run dev -- -p "$UI_PORT" ) &
 
 wait

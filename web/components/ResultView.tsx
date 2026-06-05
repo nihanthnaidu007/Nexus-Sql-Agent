@@ -2,66 +2,15 @@ import type { NormalizedResult } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { SqlBlock } from "./SqlBlock";
 import { ResultTable } from "./ResultTable";
-
-/** Confidence as a small inline tag (kept simple for 8.2; full banner is 8.3). */
-function Confidence({
-  level,
-  cached,
-}: {
-  level: string | null;
-  cached: boolean;
-}) {
-  const norm = (level ?? "UNKNOWN").toUpperCase();
-  const cls =
-    norm === "HIGH"
-      ? "conf-high"
-      : norm === "MEDIUM"
-        ? "conf-medium"
-        : norm === "LOW"
-          ? "conf-low"
-          : "conf-unknown";
-  return (
-    <div className="meta-row">
-      <span className={`conf ${cls}`}>
-        <span className="dot" /> Confidence · {norm}
-      </span>
-      {cached && <span className="tag">cached</span>}
-    </div>
-  );
-}
+import { ConfidenceBanner } from "./ConfidenceBanner";
 
 /**
- * Renders one response. The happy path (ANSWERED) is the designed experience:
- * SQL → result → insight → confidence, revealed top-to-bottom with a staggered
- * entrance. Refusal and clarification keep the minimal, non-crashing treatment
- * from 8.1 (8.3 designs them fully).
+ * The ANSWERED happy path: SQL → result → insight → confidence, revealed top to
+ * bottom with a staggered entrance. Refusal and clarification are no longer
+ * rendered here — they have dedicated, designed components (Refusal, Clarification)
+ * driven by the page's conversation state.
  */
-export function ResultView({ result }: { result: NormalizedResult }) {
-  // ---- Refusal (minimal; 8.3 styles fully) ----
-  if (result.isRefusal) {
-    return (
-      <div className="notice refusal" role="status">
-        <div className="notice-label">Refused · {result.outcome}</div>
-        <div className="notice-body">
-          {result.refusalReason || "The request was refused."}
-        </div>
-      </div>
-    );
-  }
-
-  // ---- Clarification (minimal; 8.3 designs the round-trip) ----
-  if (result.isClarification) {
-    return (
-      <div className="notice clarify" role="status">
-        <div className="notice-label">Needs clarification</div>
-        <div className="notice-body">
-          {result.clarifyingQuestion || "Could you rephrase or add detail?"}
-        </div>
-      </div>
-    );
-  }
-
-  // ---- Answer (the designed happy path) ----
+export function AnswerView({ result }: { result: NormalizedResult }) {
   return (
     <div className="results">
       <section className="section s0">
@@ -91,7 +40,12 @@ export function ResultView({ result }: { result: NormalizedResult }) {
       )}
 
       <section className="section s3">
-        <Confidence level={result.confidence} cached={result.servedFromCache} />
+        <span className="label">Confidence</span>
+        <ConfidenceBanner
+          level={result.confidence}
+          reasons={result.confidenceReasons}
+          cached={result.servedFromCache}
+        />
       </section>
     </div>
   );
