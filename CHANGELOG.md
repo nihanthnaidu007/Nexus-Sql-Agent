@@ -31,8 +31,9 @@ agent built on LangGraph, whose design priority is **trust over capability**.
 
 **Self-contained demo and operations**
 - One-command bring-up (`docker compose up`) that provisions both databases, the
-  read-only role, the bundled SaaS sample data, the migrations, and the schema
-  embeddings — the only required input is two API keys.
+  read-only role, the bundled SaaS sample data, the migrations, the schema
+  embeddings, the API, and the React web UI — the only required input is two API
+  keys.
 - A single target switch (`scripts/use_target.sh <saas|chinook|url>`) that points
   the API, embeddings, and benchmark at one target and re-embeds in step.
 - A CLI: `nixus query`, `nixus health`, `nixus reembed`.
@@ -42,6 +43,16 @@ agent built on LangGraph, whose design priority is **trust over capability**.
 - Opt-in LangSmith tracing: off by default; a placeholder key produces no tracing
   and no error noise.
 - The Docker image builds from `requirements.lock` for a fully pinned environment.
+
+**React web UI**
+- A hand-built React (Next.js) frontend, served at `http://localhost:3000`, that
+  makes the trust model visible: the generated SQL, result table, and insight for
+  an answer; the categorical **confidence** with its reasons; the **clarification**
+  round-trip (honoring server-enforced N=2 termination); and the **refusal** states
+  designed as deliberate, legitimate outcomes, kept distinct from an actual request
+  error. It consumes the same `POST /api/v1/run` endpoint as the CLI and adds no
+  system capability — it makes the proven pipeline legible. This frontend replaces
+  the earlier Streamlit prototype, which has been retired.
 
 **Honest benchmark**
 - A fixed, held-out SaaS gold set scored by result-equivalence. Result of record:

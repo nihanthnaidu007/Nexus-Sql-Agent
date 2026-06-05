@@ -18,16 +18,18 @@ including the two questions it gets wrong and why.
 
 The default `docker compose up` stands up everything: both databases, the
 read-only role, the bundled SaaS sample data (loaded + seeded), the schema
-migrations, the schema embeddings, and the API. **The only thing you must
-provide is two API keys.** No connection string, no external database.
+migrations, the schema embeddings, the API, and the **React web UI**. **The only
+thing you must provide is two API keys.** No connection string, no external
+database.
 
 ```bash
 git clone <repo-url> && cd Nexus-Sql-Agent
 cp .env.example .env          # then set ANTHROPIC_API_KEY and OPENAI_API_KEY in .env
-docker compose up -d --build  # provisions both DBs, seeds SaaS, migrates, embeds, boots the API
+docker compose up -d --build  # provisions both DBs, seeds SaaS, migrates, embeds, boots the API + web UI
 
-# once healthy:
-nixus query "how many organizations are there?"
+# once healthy — ask in the browser or from the CLI:
+open http://localhost:3000                       # the React web UI
+nixus query "how many organizations are there?"  # or the CLI
 ```
 
 On first boot the API container runs, in strict idempotent order: wait for
@@ -46,6 +48,19 @@ Notes on setup safety:
 
 `scripts/setup.sh` is an optional guided path: it creates `.env` (if absent),
 prompts for the two keys without echoing them, and brings the stack up.
+
+---
+
+## Web UI
+
+A hand-built React (Next.js) frontend at **http://localhost:3000** makes the trust
+model visible. For a normal answer it shows the generated SQL, the result table,
+and the insight; alongside it the **confidence** verdict with its reasons. When a
+question is too ambiguous it runs the **clarification** round-trip (the system asks
+rather than guesses); when a request is out of scope, a write, or stays ambiguous
+it shows the **refusal** as a deliberate, legitimate outcome — not an error. The UI
+calls the same `POST /api/v1/run` endpoint the CLI uses: it adds no capability, it
+makes the proven pipeline legible.
 
 ---
 
@@ -182,7 +197,8 @@ The harness lives in [`eval/`](eval/); the gold set is
 ## Architecture
 
 NIXUS is one **framework-agnostic core** (`nixus/`) wrapped by **thin adapters**
-(the FastAPI service in `api/`, the CLI in `nixus/cli.py`). All query logic —
+(the FastAPI service in `api/`, the CLI in `nixus/cli.py`, and the React web UI in
+`web/`). All query logic —
 scope classification, schema and few-shot retrieval, SQL generation, syntax
 validation, grounding, execution, result checking, and explanation — lives in a
 LangGraph node pipeline behind a single entry point,
