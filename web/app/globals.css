@@ -240,6 +240,7 @@ body {
   .section { animation: none; }
   .intel { animation: none; }
   .running-dot { animation: none; }
+  .node-running .node-dot { animation: none; }
 }
 
 /* ----- SQL slab (first-class, dark-on-warm for weight) ---------------------- */
@@ -812,6 +813,33 @@ td.num {
   background: var(--accent-tint);
 }
 .node-error .node-dot { background: var(--accent); }
+
+/* RUNNING (live, Phase 12) — the node executing right now over SSE. The accent
+   dot pulses with the SAME `pulse` used by the running indicator; the chip takes
+   the established accent-tint treatment. Design language (oxblood), not a neon
+   glow — restraint holds even in the live view. */
+.node-running {
+  color: var(--accent-deep);
+  border-color: var(--accent);
+  background: var(--accent-tint);
+}
+.node-running .node-dot {
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+/* PENDING (live, Phase 12) — a node not yet reached on a live run. Dimmed and
+   waiting; distinct from idle ("won't run on this path") — this one is coming. */
+.node-pending {
+  color: var(--ink-faint);
+  background: var(--paper-sunken);
+  border-color: var(--rule);
+  opacity: 0.7;
+}
+.node-pending .node-dot {
+  background: transparent;
+  border: 1px solid var(--rule-strong);
+}
 
 /* IDLE — a conditional branch this run didn't take (scope reply / self-correct on
    a clean answer). Dimmed so it reads as "not part of this run", not pending. */
