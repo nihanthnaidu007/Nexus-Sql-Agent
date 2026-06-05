@@ -1,0 +1,542 @@
+/* ============================================================================
+   NIXUS SQL — "Engineering Ledger" design system (Phase 8.2)
+
+   Aesthetic: a warm-paper technical document. Ink on paper, one oxblood accent,
+   a dark SQL slab for weight, hairline rules + mono section labels instead of
+   rounded card-soup. Deliberately NOT a generic dark/purple SaaS dashboard.
+   ========================================================================== */
+
+:root {
+  /* Palette — warm paper, warm ink, a single sharp accent. */
+  --paper: #f4f0e6;
+  --paper-raised: #efeadc;
+  --paper-sunken: #e9e3d2;
+  --slab: #1c1a14; /* the dark SQL surface */
+  --slab-line: #2e2b22;
+  --ink: #1a1813;
+  --ink-soft: #5a5446;
+  --ink-faint: #8a8270;
+  --rule: #d9d1be;
+  --rule-strong: #c8bfa6;
+  --accent: #a8341b; /* oxblood / rust — the only accent */
+  --accent-deep: #842513;
+  --accent-tint: #f0e3d4;
+  --ok: #4f6f3a; /* muted olive for "good" states (confidence/cache) */
+  --warn: #9a6b16;
+
+  --maxw: 940px;
+  --gap: 28px;
+
+  --font-display: Georgia, serif;
+  --font-sans: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--paper);
+  /* Subtle paper grain + a faint top vignette for atmosphere (not a gradient header). */
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(26, 24, 19, 0.035) 1px, transparent 0);
+  background-size: 22px 22px;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--paper);
+}
+
+/* ----- Shell & masthead ----------------------------------------------------- */
+
+.shell {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 56px 28px 120px;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 34px;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0;
+}
+
+.wordmark .dot {
+  color: var(--accent);
+}
+
+.tagline {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+}
+
+/* Small monospaced section label — the "ledger" device used instead of cards. */
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+
+/* ----- Query form ----------------------------------------------------------- */
+
+.query {
+  margin-top: 40px;
+}
+
+.query-field {
+  display: flex;
+  align-items: stretch;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-raised);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.query-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: 4px 4px 0 var(--accent);
+}
+
+.query-prompt {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 18px;
+  padding: 16px 0 16px 18px;
+  user-select: none;
+  align-self: center;
+}
+
+.query-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 17px;
+  color: var(--ink);
+  padding: 16px 14px;
+  resize: none;
+  line-height: 1.4;
+}
+
+.query-input::placeholder {
+  color: var(--ink-faint);
+}
+
+.query-submit {
+  border: none;
+  border-left: 1.5px solid var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 24px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.query-submit:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.query-submit:disabled {
+  cursor: default;
+  background: var(--ink-faint);
+}
+
+.query-hint {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.query-hint kbd {
+  font-family: var(--font-mono);
+  background: var(--paper-sunken);
+  border: 1px solid var(--rule-strong);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+/* ----- Result sections ------------------------------------------------------ */
+
+.results {
+  margin-top: 52px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.section {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.section > .label {
+  margin-bottom: 12px;
+}
+
+/* Staggered reveal on load — one orchestrated entrance, not scattered jitter. */
+.section.s0 { animation-delay: 0.02s; }
+.section.s1 { animation-delay: 0.10s; }
+.section.s2 { animation-delay: 0.18s; }
+.section.s3 { animation-delay: 0.26s; }
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .section { animation: none; }
+  .running-dot { animation: none; }
+}
+
+/* ----- SQL slab (first-class, dark-on-warm for weight) ---------------------- */
+
+.sql-slab {
+  background: var(--slab);
+  color: #e7e0cf;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+  border-left: 3px solid var(--accent);
+  position: relative;
+}
+
+.sql-slab pre {
+  margin: 0;
+  padding: 20px 22px;
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.sql-copy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: var(--slab-line);
+  color: #cfc7b3;
+  border: 1px solid #3d3a2e;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sql-copy:hover {
+  background: var(--accent);
+  color: var(--paper);
+  border-color: var(--accent);
+}
+
+/* SQL token colors (hand-rolled highlighter) */
+.tok-kw { color: #e8915f; font-weight: 500; }   /* keywords — warm accent family */
+.tok-fn { color: #d8c98a; }                      /* function names */
+.tok-str { color: #9fbf7e; }                     /* string literals */
+.tok-num { color: #c9a0d8; }                      /* numbers */
+.tok-comment { color: #6f6a59; font-style: italic; }
+
+/* ----- Result table --------------------------------------------------------- */
+
+.table-meta {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-bottom: 10px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+}
+
+table.result {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+}
+
+table.result thead th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--ink);
+  background: var(--paper-sunken);
+  border-bottom: 2px solid var(--rule-strong);
+  padding: 9px 16px;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+}
+
+table.result tbody td {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+table.result tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table.result tbody tr:nth-child(even) td {
+  background: rgba(26, 24, 19, 0.018);
+}
+
+td.null {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-cap {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin-top: 8px;
+}
+
+.empty {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  border: 1px dashed var(--rule-strong);
+  background: var(--paper-raised);
+  padding: 18px 20px;
+}
+
+/* ----- Insight prose (serif — visually distinct from the mono data) --------- */
+
+.insight {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--ink);
+  max-width: 64ch;
+}
+
+.insight strong {
+  font-weight: 600;
+  color: var(--accent-deep);
+}
+
+.insight em {
+  font-style: italic;
+}
+
+.insight code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--paper-sunken);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ----- Confidence tag (kept simple per 8.2; full banner is 8.3) ------------- */
+
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.conf {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.04em;
+}
+
+.conf .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.conf-high .dot { background: var(--ok); }
+.conf-medium .dot { background: var(--warn); }
+.conf-low .dot { background: var(--accent); }
+.conf-unknown .dot { background: var(--ink-faint); }
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule-strong);
+  padding: 2px 8px;
+}
+
+/* ----- Loading state (instrument working) ----------------------------------- */
+
+.running {
+  margin-top: 52px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.running-dot {
+  width: 9px;
+  height: 9px;
+  background: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+.skeleton {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skeleton .bar {
+  height: 14px;
+  background: linear-gradient(
+    90deg,
+    var(--paper-sunken) 25%,
+    var(--paper-raised) 37%,
+    var(--paper-sunken) 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+
+.skeleton .bar.w1 { width: 30%; }
+.skeleton .bar.w2 { width: 92%; height: 60px; }
+.skeleton .bar.w3 { width: 70%; }
+
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* ----- Notices: refusal / clarification / error (minimal per 8.2) ----------- */
+
+.notice {
+  margin-top: 52px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-raised);
+  padding: 20px 22px;
+  animation: rise 0.4s ease both;
+}
+
+.notice .notice-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.notice .notice-body {
+  font-family: var(--font-sans);
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+
+.notice.refusal { border-color: var(--accent); }
+.notice.refusal .notice-label { color: var(--accent); }
+.notice.refusal { box-shadow: 4px 4px 0 var(--accent-tint); }
+
+.notice.clarify { border-color: var(--warn); }
+.notice.clarify .notice-label { color: var(--warn); }
+
+.notice.error { border-color: var(--accent-deep); background: #f3e4df; }
+.notice.error .notice-label { color: var(--accent-deep); }
+.notice .trace {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 8px;
+}
+
+/* ----- Responsive ----------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .shell { padding: 36px 18px 80px; }
+  .masthead { flex-direction: column; gap: 6px; align-items: flex-start; }
+  .wordmark { font-size: 28px; }
+  .query-field { flex-wrap: wrap; }
+  .query-submit {
+    border-left: none;
+    border-top: 1.5px solid var(--ink);
+    width: 100%;
+    padding: 14px 0;
+  }
+  .insight { font-size: 17px; }
+}
