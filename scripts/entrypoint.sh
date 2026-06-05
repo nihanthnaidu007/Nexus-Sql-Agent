@@ -49,7 +49,13 @@ import os; from dotenv import load_dotenv; load_dotenv(os.path.join(os.getcwd(),
 from nixus.config import settings
 
 target_db = (settings.target_url or "").rsplit("/", 1)[-1].split("?")[0]
-is_saas = target_db == "nixus_saas"
+# Map each bundled sample target to its deterministic rebuild script. The DEMO
+# (nixus_saas_demo) is the stack default; nixus_saas is the FROZEN benchmark set.
+# Both rebuild scripts target their OWN database only — never each other's.
+REBUILD = {
+    "nixus_saas_demo": "scripts/rebuild_demo_db.py",
+    "nixus_saas": "scripts/rebuild_saas_db.py",
+}
 
 def target_table_count() -> int:
     """Owner-connection count of public tables in the target (−1 if unknown)."""
@@ -68,11 +74,34 @@ def target_table_count() -> int:
         print(f"  (could not inspect target: {type(e).__name__}) — assuming present")
         return -1
 
+def flush_query_cache() -> None:
+    """Discard query_cache after a FRESH target build — cached results (SQL +
+    row preview) are target-specific, and a just-built target has no legitimate
+    cache. This keeps the demo correct on the realistic upgrade path (an existing
+    state volume where the default target changed, so the new target is built on
+    first boot). On a truly fresh volume the cache is already empty (no-op)."""
+    state = settings.state_url or settings.database_url or ""
+    if not state:
+        return
+    try:
+        import psycopg2
+        conn = psycopg2.connect(state); conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.query_cache')")
+            if cur.fetchone()[0] is not None:
+                cur.execute("DELETE FROM query_cache")
+                print(f"  ✓ flushed query_cache ({cur.rowcount} stale entries) after fresh build")
+        conn.close()
+    except Exception as e:
+        print(f"  (could not flush query_cache: {type(e).__name__}) — continuing")
+
 n = target_table_count()
-if is_saas and n == 0:
-    # Fresh-volume init normally already loaded SaaS; rebuild only if it is empty.
-    print("  target nixus_saas is empty — building it from eval/saas_*.sql ...")
-    subprocess.run([sys.executable, "scripts/rebuild_saas_db.py"], check=True)
+rebuild = REBUILD.get(target_db)
+if rebuild and n == 0:
+    # Fresh-volume init normally already loaded this target; rebuild only if empty.
+    print(f"  target {target_db} is empty — building it via {rebuild} ...")
+    subprocess.run([sys.executable, rebuild], check=True)
+    flush_query_cache()
 else:
     shown = n if n >= 0 else "unknown"
     print(f"  ✓ target already provisioned ({shown} public tables) — skipping")
