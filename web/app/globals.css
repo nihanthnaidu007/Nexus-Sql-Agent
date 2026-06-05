@@ -364,6 +364,126 @@ td.num {
   padding: 18px 20px;
 }
 
+/* ----- Result view: Table ⇄ Chart toggle + chart frame (Phase 9) ------------ */
+
+/* The Result section's head: the mono label rule on the left, the toggle pinned
+   right — "RESULT ———————————————— [ Table | Chart ]". */
+.result-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.result-head .label {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+/* Segmented control in the ink/paper language (mirrors the query-submit slab). */
+.view-toggle {
+  display: inline-flex;
+  border: 1.5px solid var(--ink);
+  flex: none;
+}
+
+.view-toggle button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 16px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.view-toggle button + button {
+  border-left: 1.5px solid var(--ink);
+}
+
+.view-toggle button:hover:not([aria-pressed="true"]) {
+  color: var(--accent);
+}
+
+.view-toggle button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The chart surface — a framed paper panel, consistent with the table frame. */
+.chart-frame {
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+  padding: 16px 14px 12px;
+}
+
+/* Recharts injects focus outlines on its SVG wrapper; calm them to the language. */
+.chart-frame .recharts-wrapper:focus,
+.chart-frame .recharts-surface:focus {
+  outline: none;
+}
+
+/* "◈ {type} — {reasoning}" — the backend's WHY, in the ledger caption voice. */
+.chart-caption {
+  margin: 12px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.chart-caption-glyph {
+  color: var(--accent);
+  margin-right: 6px;
+}
+
+.chart-caption-type {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+.chart-trunc {
+  margin: 6px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+/* Honest no-chart state — a calm, legitimate outcome, NOT an error. Echoes the
+   dashed .empty treatment so it reads as "nothing here", not "something broke". */
+.chart-empty {
+  border: 1px dashed var(--rule-strong);
+  background: var(--paper-raised);
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.chart-empty-glyph {
+  display: block;
+  font-size: 26px;
+  color: var(--ink-faint);
+  margin-bottom: 10px;
+}
+
+.chart-empty-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.chart-empty-note {
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
 /* ----- Insight prose (serif — visually distinct from the mono data) --------- */
 
 .insight {
