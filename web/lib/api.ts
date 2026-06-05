@@ -117,6 +117,13 @@ export interface NixusResponse {
   confidence: string | null; // "HIGH" | "MEDIUM" | "LOW"
   confidence_score: number;
   confidence_reasons: string[];
+  // Intelligence-strip fields (Phase 10) — what the system DID, surfaced read-only.
+  // All already returned by /run (nixus/graph/state.py:91-105); normalize() used to
+  // discard them. We do NOT change what is sent — only stop dropping what comes back.
+  intent_class: string | null; // "READ" | "WRITE" | "SCHEMA_QUESTION" on the answer path
+  extracted_entities: string[] | null; // entity strings (may be [] for simple queries)
+  similar_examples: unknown[] | null; // few-shots loaded — we surface only the COUNT
+  correction_attempts: number | null; // self-correction loops (0 = clean first pass; cap 3)
   // Clarification path
   clarifying_question: string | null;
   // Refusal path
@@ -175,6 +182,19 @@ export interface NormalizedResult {
   confidence: string | null;
   confidenceReasons: string[];
   servedFromCache: boolean;
+  // ---- Intelligence strip (Phase 10): what the system did + how confident -----
+  // Render-only fields the backend already returns; kept here so the strip can
+  // surface them. Absent/empty cases are represented HONESTLY (null / [] / 0), not
+  // faked — the UI omits a field rather than drawing an empty box.
+  intentClass: string | null; // READ | WRITE | SCHEMA_QUESTION (null → omit the badge)
+  extractedEntities: string[]; // [] for simple queries → pills omitted
+  fewShotCount: number; // count of similar_examples loaded (0 is meaningful)
+  correctionAttempts: number; // self-correction loops (0 = clean first pass; cap 3)
+  confidenceScore: number | null; // numeric score complementing the categorical level
+  cacheHit: boolean; // cache_result.hit — the authoritative cache signal
+  cacheSimilarity: number | null; // similarity ONLY when hit (0.0 on a miss → null)
+  executionTimeMs: number | null; // live runs only; null when served from cache
+  traceUrl: string | null; // LangSmith success-path trace; null when tracing is off
   // The backend's chart decision, carried through verbatim for ChartView to render.
   chartConfig: ChartConfig | null;
   // Non-answer text
@@ -278,6 +298,12 @@ export function normalize(raw: NixusResponse): NormalizedResult {
     columns = Object.keys(rows[0]);
   }
 
+  // Intelligence-strip fields — kept honest to the real shape from the live /run:
+  //  · cache_result EXISTS on a miss too (hit:false, similarity:0.0) → only treat
+  //    similarity as meaningful when hit, so the strip never shows a "0.0" score.
+  //  · execution_result is null/absent on a cache hit → no timing to show.
+  const cacheHit = !!cache?.hit;
+
   return {
     outcome,
     isRefusal,
@@ -292,6 +318,23 @@ export function normalize(raw: NixusResponse): NormalizedResult {
     confidence: raw.confidence ?? null,
     confidenceReasons: raw.confidence_reasons ?? [],
     servedFromCache: !!raw.served_from_cache,
+    intentClass: raw.intent_class ?? null,
+    extractedEntities: Array.isArray(raw.extracted_entities)
+      ? raw.extracted_entities
+      : [],
+    fewShotCount: Array.isArray(raw.similar_examples)
+      ? raw.similar_examples.length
+      : 0,
+    correctionAttempts:
+      typeof raw.correction_attempts === "number" ? raw.correction_attempts : 0,
+    confidenceScore:
+      typeof raw.confidence_score === "number" ? raw.confidence_score : null,
+    cacheHit,
+    cacheSimilarity:
+      cacheHit && typeof cache?.similarity === "number" ? cache.similarity : null,
+    executionTimeMs:
+      typeof exec?.execution_time_ms === "number" ? exec.execution_time_ms : null,
+    traceUrl: raw.trace_url ?? null,
     chartConfig: raw.chart_config ?? null,
     clarifyingQuestion: raw.clarifying_question ?? "",
     refusalReason: raw.reason ?? raw.scope_message ?? raw.explanation ?? "",

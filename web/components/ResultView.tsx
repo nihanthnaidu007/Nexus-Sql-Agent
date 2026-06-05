@@ -7,6 +7,7 @@ import { SqlBlock } from "./SqlBlock";
 import { ResultTable } from "./ResultTable";
 import { ChartView, hasChart } from "./ChartView";
 import { ConfidenceBanner } from "./ConfidenceBanner";
+import { IntelligenceStrip } from "./IntelligenceStrip";
 
 /**
  * The ANSWERED happy path: SQL → result → insight → confidence, revealed top to
@@ -55,12 +56,59 @@ function ViewToggle({
   );
 }
 
+/**
+ * The result panel footer: run metrics + the success-path trace link.
+ *
+ *  · TIMING (B10): "{rows} rows · {ms} ms". The ms segment shows only on a live
+ *    run — a cache hit has no execution_time_ms, so we omit it rather than fake a 0.
+ *  · TRACE (B16): a subtle "view trace ↗" to LangSmith, rendered ONLY when the
+ *    backend supplies trace_url (tracing on). When tracing is off (trace_url null)
+ *    it is quietly omitted — never a dead link. (The ERROR-path trace handling in
+ *    page.tsx is separate and untouched.)
+ */
+function ResultFooter({
+  rowCount,
+  executionTimeMs,
+  traceUrl,
+}: {
+  rowCount: number;
+  executionTimeMs: number | null;
+  traceUrl: string | null;
+}) {
+  return (
+    <div className="result-foot">
+      <span className="result-foot-meta">
+        {rowCount.toLocaleString()} row{rowCount === 1 ? "" : "s"}
+        {executionTimeMs != null && (
+          <>
+            {" · "}
+            {executionTimeMs} ms
+          </>
+        )}
+      </span>
+      {traceUrl && (
+        <a
+          className="trace-link"
+          href={traceUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
+          view trace ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
 export function AnswerView({ result }: { result: NormalizedResult }) {
   const [mode, setMode] = useState<ResultMode>("table");
   const chartable = hasChart(result.chartConfig);
 
   return (
     <div className="results">
+      {/* What the system DID — a glanceable header above the artifacts. */}
+      <IntelligenceStrip result={result} />
+
       <section className="section s0">
         <span className="label">SQL</span>
         {result.sql ? (
@@ -85,6 +133,11 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
         ) : (
           <ChartView config={result.chartConfig} rows={result.rows} />
         )}
+        <ResultFooter
+          rowCount={result.rowCount}
+          executionTimeMs={result.executionTimeMs}
+          traceUrl={result.traceUrl}
+        />
       </section>
 
       {result.insight && (
