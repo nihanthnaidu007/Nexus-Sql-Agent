@@ -25,7 +25,11 @@
   --warn: #9a6b16; /* ochre — medium confidence (a signal, not alarm) */
   --low: #9a5b3b; /* muted terracotta — low confidence (honest, NOT alarm red) */
 
-  --maxw: 940px;
+  /* Phase 14 — a wide, landscape measure. The layout fills the screen up to this
+     generous cap (so 1440 / 1680 / 1920 / 2048 monitors read as full-width), and
+     only reins in extreme 4K / ultrawide so the mono data never over-stretches.
+     Data uses this full width; PROSE keeps its own readable measure (.insight). */
+  --maxw: 2200px;
   --gap: 28px;
 
   --font-display: Georgia, serif;
@@ -67,7 +71,9 @@ body {
 .shell {
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: 56px 28px 120px;
+  /* A responsive side gutter — comfortable breathing room from the edge of the
+     glass that grows with the viewport, never letting content touch the very edge. */
+  padding: 56px clamp(24px, 4vw, 72px) 120px;
 }
 
 .masthead {
@@ -818,7 +824,9 @@ td.num {
   font-size: 19px;
   line-height: 1.6;
   color: var(--ink);
-  max-width: 64ch;
+  /* PROSE stays at a readable measure even though its container is now full-width:
+     it sits left-aligned within the wide section rather than stretching edge-to-edge. */
+  max-width: 72ch;
 }
 
 .insight strong {
@@ -938,6 +946,11 @@ td.num {
   gap: 5px;
   padding: 11px 18px;
   border-left: 1px solid var(--rule);
+  /* Phase 14 — with the wide layout, the cells share the full band evenly (a
+     distributed ledger header) instead of cramping at the left. Still contiguous,
+     still joined by the hairline divider; only the horizontal distribution changes.
+     The narrow-screen media query below re-stacks them, so this is desktop-only. */
+  flex: 1 1 auto;
 }
 
 .intel-cell:first-child {
