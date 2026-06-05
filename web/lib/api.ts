@@ -316,6 +316,84 @@ export async function runQuery(
   return normalize(data);
 }
 
+// ---- Edit-SQL + re-run (Phase 13, B6): POST /api/v1/run-sql -------------------
+//
+// ADDITIVE. Lets the user re-run ARBITRARY SQL they wrote (not generated, not
+// grounded) against the EXISTING /run-sql endpoint (api/main.py:352). The endpoint
+// returns the SAME final-state shape /run does, so we feed it straight into
+// normalize() and patch the rendered result (table/chart/SQL) in place.
+//
+// SAFETY is the DATABASE's, not the client's: /run-sql runs through the read-only
+// role (nixus_readonly) AND rejects any non-SELECT at the API boundary with a 400.
+// A write/DDL therefore NEVER reaches the data — it returns here as a clean `error`
+// string to render, never a crash. The client deliberately does NOT pre-filter SQL;
+// it just surfaces whatever the endpoint decides (verified Phase 13 STEP 0).
+
+/** The outcome of an edited-SQL re-run. `ok` is true only when a SELECT actually
+ *  ran and returned a result; otherwise `error` holds a readable message and the
+ *  caller keeps the prior result. Two failure shapes are folded into `error`:
+ *    · 400 { error, detail } — a non-SELECT rejected by the read-only guard, or an
+ *      unparseable statement.
+ *    · 200 with execution_result.success=false — a valid SELECT that failed at
+ *      execution (unknown column/table, timeout); the DB error is surfaced. */
+export interface EditedSqlOutcome {
+  ok: boolean;
+  result: NormalizedResult | null;
+  error: string | null;
+}
+
+/** POST user-edited SQL to /api/v1/run-sql and normalize the outcome. Never throws
+ *  for an expected failure (rejected write, bad SQL) — those come back as `error`
+ *  so the edit UI can render them cleanly in place. */
+export async function runEditedSql(
+  sql: string,
+  sessionId: string,
+): Promise<EditedSqlOutcome> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/v1/run-sql`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, session_id: sessionId }),
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      result: null,
+      error: `Could not reach the API at ${API_BASE_URL}. Is the stack up? (${
+        e instanceof Error ? e.message : String(e)
+      })`,
+    };
+  }
+
+  // Boundary rejection: a write/DDL refused by the read-only guard, or unparseable
+  // SQL, returns 400 { error, detail }. Surface it as a readable message — this is
+  // the tool BEING read-only, not an app failure.
+  if (!res.ok) {
+    let msg = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body?.error) msg = String(body.error);
+      if (body?.detail) msg += ` — ${String(body.detail)}`;
+    } catch {
+      /* no JSON body — keep the status line */
+    }
+    return { ok: false, result: null, error: msg };
+  }
+
+  const data = (await res.json()) as NixusResponse;
+
+  // A 200 can still carry a failure: a valid SELECT that errored at execution
+  // (unknown column/table, statement timeout) comes back with the DB error under
+  // execution_result. Pull it up so the user sees the real reason, not an empty table.
+  const exec = data.execution_result;
+  const execError = exec && exec.success === false ? exec.error ?? null : null;
+  const error = data.error ?? execError ?? null;
+  if (error) return { ok: false, result: null, error };
+
+  return { ok: true, result: normalize(data), error: null };
+}
+
 // ---- Streaming (Phase 12): live SSE client over POST /api/v1/stream -----------
 //
 // ADDITIVE. runQuery() above (the blocking /api/v1/run path) is unchanged and

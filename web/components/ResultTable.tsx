@@ -1,10 +1,20 @@
+"use client";
+
 /**
  * The result set as a real <table>: semantic header, aligned columns, right-
  * aligned numerics, a clear empty state, and column/row-overflow handling (the
  * table scrolls horizontally inside its frame rather than blowing out the page).
+ *
+ * Phase 13 (B9): rows are PAGED client-side over the data already in the response —
+ * prev/next + "Page X of Y", no refetch. We page over `rows` (what was actually
+ * returned). On a cache PREVIEW the response carries only a subset of the true total:
+ * we page that subset and label it as a preview, never implying more rows than came
+ * back. The header still names the true `rowCount` and the cache-preview origin.
  */
 
-const ROW_CAP = 100; // keep the DOM sane; note the true total below.
+import { useEffect, useState } from "react";
+
+const PAGE_SIZE = 50; // rows per page — keeps the DOM light and the table scannable.
 
 function isNumeric(v: unknown): boolean {
   return typeof v === "number" || (typeof v === "string" && v.trim() !== "" && !isNaN(Number(v)));
@@ -27,6 +37,13 @@ export function ResultTable({
   rowCount: number;
   cached?: boolean;
 }) {
+  const [page, setPage] = useState(1);
+  // Reset to the first page whenever the underlying rows change — e.g. an edited
+  // re-run (B6) patches in a new result set, or a fresh query replaces this one.
+  useEffect(() => {
+    setPage(1);
+  }, [rows]);
+
   // Empty state — distinct from an error: the query ran and returned nothing.
   if (!rows || rows.length === 0) {
     return (
@@ -37,7 +54,12 @@ export function ResultTable({
   }
 
   const cols = columns.length > 0 ? columns : Object.keys(rows[0]);
-  const shown = rows.slice(0, ROW_CAP);
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const current = Math.min(Math.max(1, page), totalPages);
+  const start = (current - 1) * PAGE_SIZE;
+  const end = Math.min(start + PAGE_SIZE, rows.length);
+  const shown = rows.slice(start, end);
+  const paged = rows.length > PAGE_SIZE;
 
   return (
     <>
@@ -58,7 +80,7 @@ export function ResultTable({
           </thead>
           <tbody>
             {shown.map((row, ri) => (
-              <tr key={ri}>
+              <tr key={start + ri}>
                 {cols.map((c) => {
                   const v = row[c];
                   const isNull = v === null || v === undefined;
@@ -74,10 +96,32 @@ export function ResultTable({
           </tbody>
         </table>
       </div>
-      {rows.length > ROW_CAP && (
-        <div className="table-cap">
-          Showing first {ROW_CAP} of {rowCount.toLocaleString()} rows.
-        </div>
+      {paged && (
+        <nav className="pager" aria-label="Result pages">
+          <button
+            type="button"
+            className="pager-btn"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={current <= 1}
+          >
+            ‹ Prev
+          </button>
+          <span className="pager-status">
+            Page {current} of {totalPages}
+            <span className="pager-range">
+              {" · "}rows {(start + 1).toLocaleString()}–{end.toLocaleString()}
+              {cached ? " of preview" : ` of ${rows.length.toLocaleString()}`}
+            </span>
+          </span>
+          <button
+            type="button"
+            className="pager-btn"
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={current >= totalPages}
+          >
+            Next ›
+          </button>
+        </nav>
       )}
     </>
   );

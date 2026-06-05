@@ -29,6 +29,7 @@ import {
   type RunOptions,
 } from "@/lib/api";
 import { QueryForm } from "@/components/QueryForm";
+import { ExamplePills } from "@/components/ExamplePills";
 import { AnswerView, LiveRunView, RunningState } from "@/components/ResultView";
 import { Clarification, ConversationContext } from "@/components/Clarification";
 import { Refusal } from "@/components/Refusal";
@@ -152,6 +153,13 @@ export default function Page() {
         onSubmit={submitFresh}
         loading={loading}
       />
+
+      {/* Example questions (B12) — click to FILL the input (no auto-submit). Shown
+          on the landing state, before the first run, so they invite a start without
+          competing with an answer once one is on screen. */}
+      {!result && !loading && (
+        <ExamplePills onPick={setQuestion} disabled={loading} />
+      )}
 
       {/* While streaming: the LIVE pipeline animates. If streaming fell back to
           /run (live cleared), the classic skeleton shows during that wait. */}
