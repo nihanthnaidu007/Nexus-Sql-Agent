@@ -207,6 +207,59 @@ body {
   color: var(--ink-soft);
 }
 
+/* ----- Example-question pills (Phase 13, B12) ------------------------------- */
+
+/* A restrained starter row under the input: a mono "Try" tag + clickable question
+   chips. Quietly inviting — paper chips with a hairline, oxblood on hover; never a
+   loud button bar. Clicking FILLS the input (page.tsx), it does not auto-submit. */
+.examples {
+  margin-top: 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.examples-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  flex: none;
+  padding-top: 2px;
+}
+
+.examples-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.example-pill {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--ink-soft);
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.example-pill:hover:not(:disabled) {
+  color: var(--accent-deep);
+  border-color: var(--accent);
+  box-shadow: 2px 2px 0 var(--accent-tint);
+}
+
+.example-pill:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 /* ----- Result sections ------------------------------------------------------ */
 
 .results {
@@ -292,6 +345,184 @@ body {
 .tok-num { color: #c9a0d8; }                      /* numbers */
 .tok-comment { color: #6f6a59; font-style: italic; }
 
+/* ----- Edit-SQL + re-run (Phase 13, B6) ------------------------------------- */
+
+/* The "Edit SQL" toggle, pinned right of the SQL label (it shares .result-head).
+   A quiet ink-outline chip mirroring the view-toggle language. */
+.sql-edit-toggle {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1.5px solid var(--ink);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sql-edit-toggle:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The editable slab — same dark surface + oxblood spine as the read-only SqlBlock,
+   so editing feels like writing ON the SQL rather than in a separate widget. */
+.sql-edit {
+  background: var(--slab);
+  border-left: 3px solid var(--accent);
+}
+
+.sql-edit-area {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: #e7e0cf;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.7;
+  padding: 18px 20px;
+  tab-size: 2;
+  caret-color: var(--accent);
+}
+
+.sql-edit-area:focus {
+  box-shadow: inset 0 0 0 1px var(--slab-line);
+}
+
+.sql-edit-area:disabled {
+  opacity: 0.65;
+}
+
+/* Inline outcome of a failed re-run — a rejected write or a bad query. Lives ON the
+   slab (a darkened band with an oxblood spine) so the failure shows where the user
+   is editing. This is the read-only role refusing, rendered calmly — not a crash. */
+.sql-edit-error {
+  border-top: 1px solid var(--slab-line);
+  border-left: 3px solid var(--accent);
+  background: rgba(168, 52, 27, 0.14);
+  padding: 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sql-edit-error-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #e8915f;
+}
+
+.sql-edit-error-body {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #ecdcd2;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* The editor's action bar: a read-only reminder on the left, Cancel / Re-run right. */
+.sql-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--slab-line);
+  padding: 12px 16px;
+}
+
+.sql-edit-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #9a927f;
+}
+
+.sql-edit-hint kbd {
+  font-family: var(--font-mono);
+  background: var(--slab-line);
+  border: 1px solid #3d3a2e;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: #cfc7b3;
+}
+
+.sql-edit-buttons {
+  display: flex;
+  gap: 10px;
+  flex: none;
+}
+
+.sql-edit-cancel,
+.sql-edit-run {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 7px 18px;
+  cursor: pointer;
+  border: 1px solid #3d3a2e;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.sql-edit-cancel {
+  background: var(--slab-line);
+  color: #cfc7b3;
+}
+
+.sql-edit-cancel:hover:not(:disabled) {
+  color: var(--paper);
+  border-color: #514d3d;
+}
+
+.sql-edit-run {
+  background: var(--accent);
+  color: var(--paper);
+  border-color: var(--accent);
+}
+
+.sql-edit-run:hover:not(:disabled) {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+
+.sql-edit-cancel:disabled,
+.sql-edit-run:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* The "this is a manual run" note under an edited result's SQL — honest about WHY
+   the grounded panels (confidence/strip/pipeline) are absent for this run. */
+.edit-note {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 12px 0 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.edit-note-mark {
+  color: var(--accent);
+  flex: none;
+}
+
 /* ----- Result table --------------------------------------------------------- */
 
 .table-meta {
@@ -356,6 +587,63 @@ td.num {
   font-size: 11.5px;
   color: var(--ink-faint);
   margin-top: 8px;
+}
+
+/* ----- Result pagination (Phase 13, B9) ------------------------------------- */
+
+/* Client-side paging over the rows already in the response — prev/next around a
+   "Page X of Y" readout, in the ledger language. No refetch: it slices what is
+   present (on a cache preview, the preview subset, labeled as such). */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.pager-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  border: 1.5px solid var(--ink);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  flex: none;
+}
+
+.pager-btn:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.pager-btn:disabled {
+  cursor: default;
+  color: var(--ink-faint);
+  border-color: var(--rule-strong);
+  background: transparent;
+}
+
+.pager-status {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.pager-range {
+  color: var(--ink-faint);
+}
+
+@media (max-width: 640px) {
+  /* On narrow screens the byte-range detail drops so the control stays one line. */
+  .pager-range { display: none; }
 }
 
 .empty {

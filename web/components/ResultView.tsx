@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import type { LiveProgress, NormalizedResult } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { runEditedSql, type LiveProgress, type NormalizedResult } from "@/lib/api";
 import { renderMarkdown } from "@/lib/markdown";
 import { SqlBlock } from "./SqlBlock";
 import { ResultTable } from "./ResultTable";
@@ -103,21 +103,191 @@ function ResultFooter({
   );
 }
 
+/**
+ * The edit-SQL surface (B6): an editable dark slab pre-filled with the current SQL,
+ * a Re-run that POSTs to /run-sql, and HONEST inline outcome handling. A rejected
+ * write (the read-only role refusing a non-SELECT) or a bad query surfaces as a
+ * clean message right here — never a crash, never an empty result. No client-side
+ * SQL filtering: the database enforces read-only; this just renders the outcome.
+ */
+function SqlEditor({
+  value,
+  onChange,
+  onRerun,
+  onCancel,
+  running,
+  error,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onRerun: () => void;
+  onCancel: () => void;
+  running: boolean;
+  error: string | null;
+}) {
+  // ⌘/Ctrl+Enter re-runs from inside the editor; Esc cancels.
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      onRerun();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onCancel();
+    }
+  }
+
+  // A non-SELECT rejected by the read-only guard reads as "this is read-only", which
+  // is a different message in kind from a plain query error (bad column, timeout).
+  const isReadOnlyRejection = !!error && /only select/i.test(error);
+  const errorKicker = isReadOnlyRejection ? "Rejected · read-only" : "Query error";
+
+  const lines = Math.min(16, Math.max(4, value.split("\n").length + 1));
+
+  return (
+    <div className="sql-edit">
+      <textarea
+        className="sql-edit-area"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        rows={lines}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        aria-label="Edit SQL"
+        disabled={running}
+      />
+      {error && (
+        <div className="sql-edit-error" role="alert">
+          <span className="sql-edit-error-kicker">{errorKicker}</span>
+          <span className="sql-edit-error-body">{error}</span>
+        </div>
+      )}
+      <div className="sql-edit-actions">
+        <span className="sql-edit-hint">
+          Runs read-only — writes (INSERT/UPDATE/DELETE/DDL) are rejected by the
+          database. <kbd>⌘</kbd>/<kbd>Ctrl</kbd>+<kbd>Enter</kbd> to re-run.
+        </span>
+        <div className="sql-edit-buttons">
+          <button
+            type="button"
+            className="sql-edit-cancel"
+            onClick={onCancel}
+            disabled={running}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="sql-edit-run"
+            onClick={onRerun}
+            disabled={running || !value.trim()}
+          >
+            {running ? "Running…" : "Re-run"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AnswerView({ result }: { result: NormalizedResult }) {
   const [mode, setMode] = useState<ResultMode>("table");
-  const chartable = hasChart(result.chartConfig);
+
+  // B6 — edit-SQL + re-run. A successful re-run PATCHES the rendered result in place
+  // (`patched`), so the SQL / table / chart / footer below all read from `view`. The
+  // edit state resets whenever a brand-new top-level result arrives (the `result`
+  // prop reference changes), so a fresh query never shows a stale patch.
+  const [patched, setPatched] = useState<NormalizedResult | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
+  const [rerunning, setRerunning] = useState(false);
+
+  useEffect(() => {
+    setPatched(null);
+    setEditing(false);
+    setDraft("");
+    setEditError(null);
+    setRerunning(false);
+    setMode("table");
+  }, [result]);
+
+  const view = patched ?? result;
+  // True once a hand-written SQL run is what's on screen. A manual run bypasses
+  // grounding/scope/cache, so we render only what /run-sql actually returns (SQL +
+  // table + chart) and SUPPRESS the grounded-run panels (intelligence strip,
+  // confidence, pipeline) rather than fabricate them for SQL the system didn't reason about.
+  const isEdited = patched !== null;
+  const chartable = hasChart(view.chartConfig);
+
+  function openEditor() {
+    setDraft(view.sql);
+    setEditError(null);
+    setEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setEditError(null);
+  }
+
+  async function rerun() {
+    const sql = draft.trim();
+    if (!sql || rerunning) return;
+    setRerunning(true);
+    setEditError(null);
+    const outcome = await runEditedSql(sql, view.sessionId);
+    setRerunning(false);
+    if (outcome.ok && outcome.result) {
+      setPatched(outcome.result);
+      setEditing(false);
+      setMode("table"); // land on the table for the freshly run result
+    } else {
+      // Rejected write / bad query — shown cleanly inside the editor, prior result kept.
+      setEditError(outcome.error ?? "The edited SQL could not be run.");
+    }
+  }
 
   return (
     <div className="results">
-      {/* What the system DID — a glanceable header above the artifacts. */}
-      <IntelligenceStrip result={result} />
+      {/* What the system DID — a glanceable header above the artifacts. Omitted for a
+          manual SQL run, which the system didn't reason about (nothing honest to show). */}
+      {!isEdited && <IntelligenceStrip result={view} />}
 
       <section className="section s0">
-        <span className="label">SQL</span>
-        {result.sql ? (
-          <SqlBlock sql={result.sql} />
+        <div className="result-head">
+          <span className="label">SQL{isEdited ? " · edited" : ""}</span>
+          {!editing && view.sql && (
+            <button type="button" className="sql-edit-toggle" onClick={openEditor}>
+              Edit SQL
+            </button>
+          )}
+        </div>
+
+        {editing ? (
+          <SqlEditor
+            value={draft}
+            onChange={setDraft}
+            onRerun={rerun}
+            onCancel={cancelEdit}
+            running={rerunning}
+            error={editError}
+          />
+        ) : view.sql ? (
+          <SqlBlock sql={view.sql} />
         ) : (
           <div className="empty">No SQL was generated for this query.</div>
+        )}
+
+        {isEdited && !editing && (
+          <p className="edit-note">
+            <span className="edit-note-mark" aria-hidden>
+              ✎
+            </span>
+            Manual SQL — executed directly through the read-only role. Not grounded or
+            scope-checked, so no confidence is assessed for this run.
+          </p>
         )}
       </section>
 
@@ -128,40 +298,46 @@ export function AnswerView({ result }: { result: NormalizedResult }) {
         </div>
         {mode === "table" ? (
           <ResultTable
-            columns={result.columns}
-            rows={result.rows}
-            rowCount={result.rowCount}
-            cached={result.servedFromCache}
+            columns={view.columns}
+            rows={view.rows}
+            rowCount={view.rowCount}
+            cached={view.servedFromCache}
           />
         ) : (
-          <ChartView config={result.chartConfig} rows={result.rows} />
+          <ChartView config={view.chartConfig} rows={view.rows} />
         )}
         <ResultFooter
-          rowCount={result.rowCount}
-          executionTimeMs={result.executionTimeMs}
-          traceUrl={result.traceUrl}
+          rowCount={view.rowCount}
+          executionTimeMs={view.executionTimeMs}
+          traceUrl={view.traceUrl}
         />
       </section>
 
-      {result.insight && (
+      {view.insight && (
         <section className="section s2">
           <span className="label">Insight</span>
-          <div className="insight">{renderMarkdown(result.insight)}</div>
+          <div className="insight">{renderMarkdown(view.insight)}</div>
         </section>
       )}
 
-      <section className="section s3">
-        <span className="label">Confidence</span>
-        <ConfidenceBanner
-          level={result.confidence}
-          reasons={result.confidenceReasons}
-          cached={result.servedFromCache}
-        />
-      </section>
+      {/* Confidence + the execution RECORD describe the GROUNDED agent run. A manual
+          SQL re-run has neither, so both are suppressed rather than faked. */}
+      {!isEdited && (
+        <>
+          <section className="section s3">
+            <span className="label">Confidence</span>
+            <ConfidenceBanner
+              level={view.confidence}
+              reasons={view.confidenceReasons}
+              cached={view.servedFromCache}
+            />
+          </section>
 
-      {/* The execution RECORD — what the pipeline did, end-state (Phase 11). Static,
-          subordinate to the answer above; the LIVE node animation is Phase 12. */}
-      <PipelineSection result={result} />
+          {/* The execution RECORD — what the pipeline did, end-state (Phase 11).
+              Static, subordinate to the answer above; the LIVE animation is Phase 12. */}
+          <PipelineSection result={view} />
+        </>
+      )}
     </div>
   );
 }
