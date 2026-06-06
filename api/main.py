@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to close checkpointer connection pool")
 
 
-app = FastAPI(title="NIXUS SQL API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="NIXUS SQL API", version="2.0.0", lifespan=lifespan)
 
 _raw_origins = settings.allowed_origins
 ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()]
@@ -490,7 +490,7 @@ async def health():
             "verify_grounding", "execute_query", "check_result", "self_correct",
             "classify_chart", "explain_result"
         ],
-        "version": "1.0.0"
+        "version": "2.0.0"
     }
 
 

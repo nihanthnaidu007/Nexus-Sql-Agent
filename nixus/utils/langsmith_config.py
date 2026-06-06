@@ -59,7 +59,7 @@ def get_run_config(
             "session_id": session_id,
             "user_query": user_query[:100],
             "project": LANGSMITH_PROJECT,
-            "version": "1.0.0"
+            "version": "2.0.0"
         }
     )
 

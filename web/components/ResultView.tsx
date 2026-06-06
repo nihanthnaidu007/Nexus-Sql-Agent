@@ -65,9 +65,11 @@ function ViewToggle({
  *  · TIMING (B10): "{rows} rows · {ms} ms". The ms segment shows only on a live
  *    run — a cache hit has no execution_time_ms, so we omit it rather than fake a 0.
  *  · TRACE (B16): a subtle "view trace ↗" to LangSmith, rendered ONLY when the
- *    backend supplies trace_url (tracing on). When tracing is off (trace_url null)
- *    it is quietly omitted — never a dead link. (The ERROR-path trace handling in
- *    page.tsx is separate and untouched.)
+ *    backend supplies trace_url. The /stream `complete` event populates it when
+ *    LangSmith tracing is enabled (api/main.py:290-327); the blocking /run path
+ *    always sends null. Tracing is OFF by default, so in the common case this is
+ *    quietly omitted — never a dead link, but a real link the moment tracing is on.
+ *    (The ERROR-path trace handling in page.tsx is separate and untouched.)
  */
 function ResultFooter({
   rowCount,

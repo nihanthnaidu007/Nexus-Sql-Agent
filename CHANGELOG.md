@@ -5,6 +5,45 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] — 2026-06-06
+
+The React web UI reaches full functional parity with the retired Streamlit interface,
+then improves beyond it. The trust pipeline and the honest benchmark are unchanged.
+
+### Changed
+
+- **React UI brought to full parity** with the retired Streamlit interface — charts,
+  the intelligence strip, diagnostics, live node-by-node streaming, edit-SQL,
+  pagination, example pills, and a discreet system-status line — then improved past it:
+  - **Native Recharts charting** (bar, line, pie, scatter, and multi-series, chosen by
+    data shape) replacing the embedded Plotly blob.
+  - A **full-width layout**.
+  - A **separate, rich demo dataset** (`nixus_saas_demo`) as the stack default, kept
+    distinct from the frozen benchmark seed so it cannot perturb the score.
+  - **Neutral (de-Chinook'd) empty states.**
+- Version bumped to **2.0.0** consistently across `pyproject.toml`,
+  `web/package.json`, the API (`GET /api/v1/health` and the FastAPI metadata), and the
+  LangSmith trace metadata. The UI footer reads the version from `/health`.
+
+### Unchanged
+
+- **Benchmark remains an honest 55/57 answerable** (easy 13/13, medium 15/17, hard
+  27/27) and **10/10 scope**. The demo dataset is separate and does not perturb the
+  frozen `nixus_saas` measurement. M3 (faithfulness gap) and M11 (`DISTINCT` omission)
+  remain the two documented, unfixed failures.
+
+### Scope decisions recorded
+
+- **Trace deep-link scoped out of the UI by default (B18).** LangSmith tracing is
+  opt-in; the streaming path surfaces a "view trace ↗" link only when tracing is
+  enabled, and the blocking `/run` path never carries one. The plumbing is kept (it is
+  a real, dormant-by-default feature), not removed.
+- **"Tables identified" subtitle won't-ported (B21).** The touched tables are already
+  visible in the rendered SQL's `FROM`/`JOIN` and the entities are in the intelligence
+  strip, so the subtitle would be redundant. A conscious won't-port.
+- **`CorrectionEntry.attempt` type confirmed honest** — the backend returns an int, so
+  the TS `number` type is correct as written (no coercion needed).
+
 ## [1.0.0] — 2026-06-04
 
 First public release. NIXUS SQL is a read-only, database-agnostic Text-to-SQL
@@ -77,4 +116,5 @@ Explicitly out of scope for V1, to set expectations honestly:
 - No usage telemetry.
 - No multi-tenancy.
 
+[2.0.0]: https://keepachangelog.com/en/1.0.0/
 [1.0.0]: https://keepachangelog.com/en/1.0.0/
