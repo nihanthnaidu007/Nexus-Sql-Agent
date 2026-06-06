@@ -736,3 +736,54 @@ export function normalize(raw: NixusResponse): NormalizedResult {
     raw,
   };
 }
+
+// ---- System status (Phase 18, B13 + B14 + B15): three read-only GETs ----------
+//
+// DISCREET, PERIPHERAL observability — these describe the SYSTEM, not a query, so
+// they live in a quiet footer status line, never inline with a result. All three
+// are EXISTING read-only GET endpoints (no contract change, no new data on the
+// wire). Each fetcher NEVER throws: a failed fetch resolves to null so the status
+// UI can render "unavailable" rather than crash or hang. We surface ONLY the real
+// fields these endpoints return (verified Phase 18 STEP 0); honest absence — a zero
+// stat is shown factually, never hidden-as-broken and never faked.
+
+/** GET /api/v1/health — the connection/health flags + version (api/main.py). */
+export interface HealthStatus {
+  status: string;
+  db_connected: boolean;
+  anthropic_connected: boolean;
+  openai_connected: boolean;
+  langsmith_tracing: boolean;
+  version: string;
+}
+
+/** GET /api/v1/cache-stats — the semantic query cache (nixus query_cache). */
+export interface CacheStats {
+  entries: number;
+  total_hits: number;
+  hit_rate: number; // 0..1
+}
+
+/** GET /api/v1/fewshot-stats — the few-shot example store (seeded + auto-learned). */
+export interface FewshotStats {
+  total: number;
+  auto_learned: number;
+  seeded: number;
+}
+
+/** Fetch a read-only status GET, returning null on ANY failure (never throws). The
+ *  status line treats null as "unavailable" — an honest absence, not a crash. */
+async function fetchStatus<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, { method: "GET" });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
+export const fetchHealth = () => fetchStatus<HealthStatus>("/api/v1/health");
+export const fetchCacheStats = () => fetchStatus<CacheStats>("/api/v1/cache-stats");
+export const fetchFewshotStats = () =>
+  fetchStatus<FewshotStats>("/api/v1/fewshot-stats");

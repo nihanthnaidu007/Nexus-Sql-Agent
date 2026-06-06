@@ -45,10 +45,13 @@ export function ResultTable({
   }, [rows]);
 
   // Empty state — distinct from an error: the query ran and returned nothing.
+  // A zero-row result is a VALID outcome (the SQL was correct; the data simply
+  // matched nothing), not a failure — and database-agnostic (no Chinook phrasing).
   if (!rows || rows.length === 0) {
     return (
       <div className="empty">
-        The query ran successfully and returned no rows.
+        The query ran successfully but returned no rows — a valid result, the data
+        just matched nothing. Try broadening the filters or checking the values.
       </div>
     );
   }
