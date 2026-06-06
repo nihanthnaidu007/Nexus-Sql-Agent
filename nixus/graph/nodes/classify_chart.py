@@ -68,6 +68,45 @@ def _is_ranking(sql: str) -> bool:
     return bool(_ORDER_BY_RE.search(sql))
 
 
+def _multi_series_col(df, candidates, x_col, cap: int):
+    """The categorical that splits a line into one series per value, or None.
+
+    A genuine SERIES dimension (e.g. `tier` in month×tier×revenue): it has between
+    2 and ``cap`` distinct values — few enough to read as separate lines — AND the
+    x-axis genuinely repeats across them (more rows than distinct x), which is the
+    hallmark of a split rather than a per-row label. Above the cap we return None so
+    the caller falls back to a single line: a 40-line chart is noise, worse than one.
+    """
+    if df[x_col].nunique() >= len(df):
+        # x is unique per row → there is no split to draw, just labels.
+        return None
+    for col in candidates:
+        if col == x_col:
+            continue
+        k = df[col].nunique()
+        if 2 <= k <= cap:
+            return col
+    return None
+
+
+def _grouped_bar_cols(df, categorical_cols, cap: int):
+    """Pick (axis, series) for a grouped bar from two categoricals, or (None, None).
+
+    With two category dimensions and one measure (e.g. users by country × tier), the
+    SERIES is the lower-cardinality category — capped at ``cap`` so the legend stays
+    legible — and the AXIS is the other (the groups along x). Above the cap there is
+    no readable split, so we return (None, None) and the caller draws a single bar.
+    """
+    if len(categorical_cols) < 2:
+        return None, None
+    by_card = sorted(categorical_cols, key=lambda c: df[c].nunique())
+    series_col, axis_col = by_card[0], by_card[-1]
+    k = df[series_col].nunique()
+    if 2 <= k <= cap and df[axis_col].nunique() >= 2:
+        return axis_col, series_col
+    return None, None
+
+
 def _fig_to_json(fig) -> str:
     """Serialize a Plotly figure to JSON without typed binary arrays.
 
@@ -167,6 +206,7 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
         or state.get("generated_sql") or ""
 
     PIE_MAX_SLICES = settings.pie_max_slices
+    MULTI_SERIES_MAX = settings.multi_series_max
 
     # A scatter needs two INDEPENDENT measures that genuinely relate. A share/percent
     # column is a part-of-a-whole, derived from another measure — so it never counts
@@ -180,6 +220,15 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
         x_col = date_cols[0]
         y_col = numeric_cols[0]
         reasoning = f"Time-series: {x_col} × {y_col}"
+        # MULTI-SERIES: a SECOND categorical (e.g. tier in month×tier×revenue) splits
+        # the line into one series per value. The date stays the x-axis (it is the
+        # ordered dimension); the categorical becomes the color/series — but only when
+        # the series count is small enough to read (else fall back to one line).
+        series_col = _multi_series_col(df, categorical_cols, x_col, MULTI_SERIES_MAX)
+        if series_col is not None:
+            color_col = series_col
+            k = df[series_col].nunique()
+            reasoning = f"Multi-line: {y_col} by {x_col} across {k} {series_col}"
     elif len(measure_cols) >= 2:
         # 2) Two (non-date) measures relating to each other -> scatter. An optional
         #    entity label becomes the color/hover, NOT a reason to fall back to bar.
@@ -203,32 +252,49 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
         num_col = share_cols[0] if share_cols else measure_cols[0]
         unique_cat = df[cat_col].nunique()
 
-        # RANKING (keep bar): a "top/most/highest N" query — ORDER BY a measure with
-        # an explicit small LIMIT. Detected from the SQL, the strongest signal.
-        is_ranking = _is_ranking(executed_sql)
+        # MULTI-SERIES (grouped bar): TWO category dimensions + one measure (and not a
+        # share/composition) → grouped bars, one series per value of the small-N
+        # second category, grouped along the other category's x-axis. Above the cap
+        # there is no readable split, so this returns None and we fall through to the
+        # single-category pie/bar logic below.
+        gb_axis, gb_series = (None, None)
+        if not share_cols:
+            gb_axis, gb_series = _grouped_bar_cols(df, categorical_cols, MULTI_SERIES_MAX)
 
-        # COMPOSITION (pie): a clean parts-of-a-whole — one non-negative value per
-        # category, few enough slices to read, and NOT a top-N ranking.
-        is_composition = (
-            not is_ranking
-            and len(categorical_cols) == 1
-            and unique_cat <= PIE_MAX_SLICES
-            and row_count <= PIE_MAX_SLICES
-            and unique_cat == row_count
-            and df[num_col].min() >= 0
-        )
-
-        x_col = cat_col
-        y_col = num_col
-        if is_composition:
-            chart_type = "pie"
-            reasoning = f"Pie: composition of {cat_col} by {num_col} ({row_count} parts)"
-        elif is_ranking:
+        if gb_series is not None:
             chart_type = "bar"
-            reasoning = f"Bar: ranking by {num_col} (top {row_count})"
+            x_col = gb_axis
+            y_col = num_col
+            color_col = gb_series
+            k = df[gb_series].nunique()
+            reasoning = f"Grouped bar: {num_col} by {gb_axis} across {k} {gb_series}"
         else:
-            chart_type = "bar"
-            reasoning = f"Bar: {cat_col} × {num_col} ({row_count} rows)"
+            # RANKING (keep bar): a "top/most/highest N" query — ORDER BY a measure
+            # with an explicit small LIMIT. Detected from the SQL, the strongest signal.
+            is_ranking = _is_ranking(executed_sql)
+
+            # COMPOSITION (pie): a clean parts-of-a-whole — one non-negative value per
+            # category, few enough slices to read, and NOT a top-N ranking.
+            is_composition = (
+                not is_ranking
+                and len(categorical_cols) == 1
+                and unique_cat <= PIE_MAX_SLICES
+                and row_count <= PIE_MAX_SLICES
+                and unique_cat == row_count
+                and df[num_col].min() >= 0
+            )
+
+            x_col = cat_col
+            y_col = num_col
+            if is_composition:
+                chart_type = "pie"
+                reasoning = f"Pie: composition of {cat_col} by {num_col} ({row_count} parts)"
+            elif is_ranking:
+                chart_type = "bar"
+                reasoning = f"Bar: ranking by {num_col} (top {row_count})"
+            else:
+                chart_type = "bar"
+                reasoning = f"Bar: {cat_col} × {num_col} ({row_count} rows)"
 
     plotly_json = None
     if chart_type != "none":
@@ -249,9 +315,12 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
                 yaxis=dict(gridcolor="rgba(0,212,255,0.08)", linecolor="rgba(0,212,255,0.2)", tickfont=dict(color="#7ba3c0")),
                 margin=dict(l=20, r=20, t=40, b=20),
             )
-            if chart_type == "bar":
+            # A single accent colour is only forced for SINGLE-series line/bar; when
+            # color_col splits the figure into multiple series, plotly's own per-series
+            # palette must stand so the series stay distinguishable.
+            if chart_type == "bar" and not color_col:
                 fig.update_traces(marker_color="#00d4ff", marker_line_color="rgba(0,212,255,0.3)", marker_line_width=1)
-            elif chart_type == "line":
+            elif chart_type == "line" and not color_col:
                 fig.update_traces(line_color="#00d4ff", line_width=2)
             elif chart_type == "scatter":
                 fig.update_traces(marker_color="#7c3aed", marker_size=8)

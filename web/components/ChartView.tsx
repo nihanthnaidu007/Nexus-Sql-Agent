@@ -64,6 +64,10 @@ const SERIES = [
 
 const CHART_HEIGHT = 360;
 const MAX_CATEGORIES = 40; // keep bar/scatter layouts sane; note when truncated
+// Defensive ceiling on rendered series. The backend already caps the split at a
+// readable few (MULTI_SERIES_MAX), so this only guards against an unexpected payload —
+// it never silently drops series the backend deemed readable.
+const MAX_SERIES = SERIES.length; // 8 — mirrors the backend cap
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -86,6 +90,54 @@ function formatDateLabel(v: unknown): string {
   const [, year, month, day] = m;
   const mon = MONTHS[Number(month) - 1] ?? month;
   return day === "01" ? `${mon} ${year}` : `${mon} ${day}, ${year}`;
+}
+
+/** Pivot LONG rows (one row per x×series) into WIDE rows Recharts can plot: one row
+ *  per distinct x, with one numeric key per series value. e.g. {month,tier,revenue}
+ *  rows → [{month, free, pro, enterprise}, …] with seriesNames ["free","pro",…].
+ *  Both x and series keep first-appearance order, so the chart is faithful to the
+ *  backend's row ordering (matching how the single-series line plots). Series beyond
+ *  `maxSeries` are dropped defensively (the backend already caps the split). */
+function pivotSeries(
+  rows: Record<string, unknown>[],
+  xKey: string,
+  seriesKey: string,
+  yKey: string,
+  maxSeries: number,
+): { data: Record<string, unknown>[]; seriesNames: string[]; droppedSeries: number } {
+  const order: string[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const s = String(r[seriesKey] ?? "");
+    if (!seen.has(s)) {
+      seen.add(s);
+      order.push(s);
+    }
+  }
+  const seriesNames = order.slice(0, maxSeries);
+  const allowed = new Set(seriesNames);
+
+  const byX = new Map<string, Record<string, unknown>>();
+  const xOrder: string[] = [];
+  for (const r of rows) {
+    const s = String(r[seriesKey] ?? "");
+    if (!allowed.has(s)) continue;
+    const xv = r[xKey];
+    const xs = String(xv ?? "");
+    let bucket = byX.get(xs);
+    if (!bucket) {
+      bucket = { [xKey]: xv };
+      byX.set(xs, bucket);
+      xOrder.push(xs);
+    }
+    const y = toNumber(r[yKey]);
+    if (y !== null) bucket[s] = y;
+  }
+  return {
+    data: xOrder.map((xs) => byX.get(xs) as Record<string, unknown>),
+    seriesNames,
+    droppedSeries: Math.max(0, order.length - seriesNames.length),
+  };
 }
 
 /** The honest no-chart state — a legitimate trust outcome, NOT an error. */
@@ -226,6 +278,131 @@ export function ChartView({
         {caption}
       </div>
     );
+  }
+
+  // ---- MULTI-SERIES line/bar: a color/series column splits into several series --
+  // The backend sets color_column ONLY for a real, small-N second categorical
+  // (month×tier×revenue → tier). We PIVOT the long rows wide and draw one line per
+  // series (multi-line) or grouped bars per series, with a legend. When the split
+  // doesn't materialise (<2 series or <2 x points) we fall through to the
+  // single-series rendering below — no regression for ordinary line/bar.
+  if (
+    (chart_type === "line" || chart_type === "bar") &&
+    color_column &&
+    color_column in sample
+  ) {
+    const { data: wide, seriesNames, droppedSeries } = pivotSeries(
+      rows,
+      x_column,
+      color_column,
+      y_column,
+      MAX_SERIES,
+    );
+    if (seriesNames.length >= 2 && wide.length >= 2) {
+      const seriesNote =
+        droppedSeries > 0 ? (
+          <p className="chart-trunc">
+            Showing {seriesNames.length} of {seriesNames.length + droppedSeries} series.
+          </p>
+        ) : null;
+      const many = wide.length > 8;
+      const isBar = chart_type === "bar";
+      const barData = isBar && wide.length > MAX_CATEGORIES ? wide.slice(0, MAX_CATEGORIES) : wide;
+      // A multi-LINE is a time-series, so it must read oldest→newest left-to-right
+      // regardless of the SQL's sort (the "split by" query returns months DESC, which
+      // would otherwise draw the lines backwards). The grouped-BAR x-axis is
+      // categorical with no inherent order, so it keeps the backend's row order.
+      // (ISO date strings sort chronologically; integer years sort numerically.)
+      const lineData = isBar
+        ? wide
+        : [...wide].sort((a, b) => {
+            const an = toNumber(a[x_column]);
+            const bn = toNumber(b[x_column]);
+            if (an !== null && bn !== null) return an - bn;
+            return String(a[x_column] ?? "").localeCompare(String(b[x_column] ?? ""));
+          });
+      const catNote =
+        isBar && wide.length > MAX_CATEGORIES ? (
+          <p className="chart-trunc">
+            Showing first {MAX_CATEGORIES} of {wide.length.toLocaleString()} categories.
+          </p>
+        ) : null;
+
+      const axis = (intervalAt: number) => (
+        <XAxis
+          dataKey={x_column}
+          tickFormatter={formatDateLabel}
+          tick={axisTick}
+          stroke={RULE_STRONG}
+          angle={many ? -35 : 0}
+          textAnchor={many ? "end" : "middle"}
+          height={many ? 64 : 30}
+          interval={(isBar ? barData.length : wide.length) > intervalAt ? "preserveStartEnd" : 0}
+        />
+      );
+
+      return (
+        <div className="chart-frame">
+          <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+            {isBar ? (
+              <BarChart data={barData} margin={{ top: 12, right: 18, bottom: many ? 56 : 12, left: 4 }}>
+                <CartesianGrid vertical={false} stroke={RULE} strokeDasharray="2 4" />
+                {axis(24)}
+                <YAxis tick={axisTick} stroke={RULE_STRONG} width={56} />
+                <Tooltip
+                  cursor={{ fill: "rgba(168,52,27,0.07)" }}
+                  labelFormatter={formatDateLabel}
+                  {...tooltipStyle}
+                />
+                <Legend wrapperStyle={legendStyle} />
+                {seriesNames.map((name, i) => (
+                  <Bar
+                    key={name}
+                    dataKey={name}
+                    name={name || "—"}
+                    fill={SERIES[i % SERIES.length]}
+                    maxBarSize={56}
+                    radius={[2, 2, 0, 0]}
+                  />
+                ))}
+              </BarChart>
+            ) : (
+              <LineChart data={lineData} margin={{ top: 12, right: 18, bottom: many ? 56 : 12, left: 4 }}>
+                <CartesianGrid vertical={false} stroke={RULE} strokeDasharray="2 4" />
+                {axis(16)}
+                <YAxis tick={axisTick} stroke={RULE_STRONG} width={56} />
+                <Tooltip
+                  cursor={{ stroke: RULE_STRONG, strokeDasharray: "3 3" }}
+                  labelFormatter={formatDateLabel}
+                  {...tooltipStyle}
+                />
+                <Legend wrapperStyle={legendStyle} />
+                {seriesNames.map((name, i) => {
+                  const color = SERIES[i % SERIES.length];
+                  return (
+                    <Line
+                      key={name}
+                      type="monotone"
+                      dataKey={name}
+                      name={name || "—"}
+                      stroke={color}
+                      strokeWidth={2}
+                      connectNulls
+                      dot={lineData.length > 30 ? false : { r: 2.5, fill: color, strokeWidth: 0 }}
+                      activeDot={{ r: 5, fill: color }}
+                    />
+                  );
+                })}
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+          {caption}
+          {seriesNote}
+          {catNote}
+        </div>
+      );
+    }
+    // else: fall through to the single-series rendering below.
   }
 
   // ---- BAR / LINE / PIE: coerce y to numeric over the x category ---------------
