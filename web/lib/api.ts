@@ -96,6 +96,9 @@ export interface ChartConfig {
  * The UI presents that empty case as a POSITIVE clean-pass signal, never an error.
  */
 export interface CorrectionEntry {
+  // The backend stores this as an int (nixus/graph/state.py:105 `correction_attempts:
+  // int`; CorrectionRecord.attempt: int), so it arrives as a JSON number — the type is
+  // honest as written. (v2 verified: no string-vs-number mismatch to coerce.)
   attempt: number;
   failed_sql: string;
   error_message: string;
@@ -168,6 +171,10 @@ export interface NixusResponse {
   scope_message: string | null;
   // Diagnostics
   error: string | null;
+  // Real-but-dormant: the /run path always sends null (query_service sets trace_url=None),
+  // but the /stream `complete` event DOES populate it via get_trace_url when LangSmith
+  // tracing is enabled (api/main.py:290-327). Tracing is off by default, so this is null
+  // in the common case — not dead plumbing. ResultView renders a trace link only when set.
   trace_url: string | null;
   [key: string]: unknown;
 }
@@ -231,7 +238,8 @@ export interface NormalizedResult {
   cacheHit: boolean; // cache_result.hit — the authoritative cache signal
   cacheSimilarity: number | null; // similarity ONLY when hit (0.0 on a miss → null)
   executionTimeMs: number | null; // live runs only; null when served from cache
-  traceUrl: string | null; // LangSmith success-path trace; null when tracing is off
+  traceUrl: string | null; // LangSmith success-path trace; populated on the /stream path
+                           // when tracing is enabled, null when tracing is off (default)
   // The backend's chart decision, carried through verbatim for ChartView to render.
   chartConfig: ChartConfig | null;
   // ---- Execution record (Phase 11): the STATIC end-state of the pipeline run ---
