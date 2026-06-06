@@ -1,4 +1,5 @@
 import json
+import re
 from nixus.config import settings
 import pandas as pd
 from datetime import datetime
@@ -22,6 +23,49 @@ def _is_numeric(val) -> bool:
         return True
     except (ValueError, TypeError):
         return False
+
+
+# The generator is told to "Always add LIMIT 1000 unless the user specifies a limit"
+# (see generate_sql.py), so an explicit LIMIT *below* that safety cap is the tell-tale
+# of a user-requested top-/bottom-N subset rather than a whole-set composition.
+_DEFAULT_SAFETY_LIMIT = 1000
+_LIMIT_RE = re.compile(r"\blimit\s+(\d+)", re.IGNORECASE)
+_ORDER_BY_RE = re.compile(r"\border\s+by\b", re.IGNORECASE)
+
+
+_SHARE_KEYWORDS = ("share", "percent", "pct", "proportion", "fraction", "ratio")
+
+
+def _looks_like_share(col: str) -> bool:
+    """True when a numeric column is a proportion of a whole (share/percent/ratio).
+
+    Such a column is a COMPOSITION signal, not an independent measure: a scatter of a
+    quantity against its own share is a meaningless straight line. Excluding it from
+    the scatter trigger keeps "share of revenue by plan" a composition (pie/bar)
+    rather than a misleading scatter, while genuine two-measure relationships (e.g.
+    revenue vs user_count) are untouched.
+    """
+    c = col.lower()
+    return any(kw in c for kw in _SHARE_KEYWORDS)
+
+
+def _is_ranking(sql: str) -> bool:
+    """True when the SQL is a top-/bottom-N RANKING (keep bar), not a composition (pie).
+
+    A ranking ("top 5 orgs by users") orders by a measure *and* caps the rows with an
+    explicit small LIMIT — the user asked for a subset. A composition ("share of
+    revenue by plan") returns the whole set. Descending order alone is far too weak a
+    signal (the generator sorts nearly everything DESC), so the discriminator is the
+    explicit LIMIT *below* the default safety cap of 1000, which is only emitted for a
+    genuine N-item request; the ORDER BY confirms it is a ranked selection. Direction
+    is intentionally ignored so a "bottom N" list also stays an honest bar.
+    """
+    if not sql:
+        return False
+    m = _LIMIT_RE.search(sql)
+    if not m or int(m.group(1)) >= _DEFAULT_SAFETY_LIMIT:
+        return False
+    return bool(_ORDER_BY_RE.search(sql))
 
 
 def _fig_to_json(fig) -> str:
@@ -51,10 +95,15 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
         cr = state["cache_result"]
         rows = cr.get("result_preview") or []
         columns = list(rows[0].keys()) if rows else []
+        # The cache stores only a 5-row preview but the true total separately; the
+        # pie cap must use the true total so a large result served from cache is not
+        # mistaken for a small-N composition.
+        total_rows = cr.get("row_count") or len(rows)
     else:
         result = state.get("execution_result") or {}
         rows = result.get("rows", [])
         columns = result.get("columns", [])
+        total_rows = result.get("row_count") or len(rows)
 
     if not rows:
         reason = "No rows to visualize" if not columns else "No rows returned — chart needs at least one row"
@@ -112,48 +161,74 @@ async def classify_chart_node(state: SQLAgentState) -> SQLAgentState:
 
     chart_type, x_col, y_col, color_col, reasoning = "none", None, None, None, ""
 
+    # The SQL actually executed (fresh path) or replayed from cache. Used below to
+    # tell a top-N RANKING apart from a parts-of-a-whole COMPOSITION.
+    executed_sql = (state.get("validation_result") or {}).get("normalized_sql") \
+        or state.get("generated_sql") or ""
+
+    PIE_MAX_SLICES = settings.pie_max_slices
+
+    # A scatter needs two INDEPENDENT measures that genuinely relate. A share/percent
+    # column is a part-of-a-whole, derived from another measure — so it never counts
+    # toward the two-measure scatter trigger; it routes to the composition logic.
+    share_cols = [c for c in numeric_cols if _looks_like_share(c)]
+    measure_cols = [c for c in numeric_cols if c not in share_cols]
+
     if date_cols and numeric_cols:
+        # 1) Time-series wins over everything: a date + a measure is a line.
         chart_type = "line"
         x_col = date_cols[0]
         y_col = numeric_cols[0]
         reasoning = f"Time-series: {x_col} × {y_col}"
+    elif len(measure_cols) >= 2:
+        # 2) Two (non-date) measures relating to each other -> scatter. An optional
+        #    entity label becomes the color/hover, NOT a reason to fall back to bar.
+        #    (A single measure per category is handled below — that is a bar/pie.)
+        chart_type = "scatter"
+        x_col = measure_cols[0]
+        y_col = measure_cols[1]
+        color_col = categorical_cols[0] if categorical_cols else None
+        if color_col:
+            n_entities = df[color_col].nunique()
+            reasoning = f"Scatter: {y_col} vs {x_col} across {n_entities} {color_col}"
+        else:
+            reasoning = f"Scatter: {y_col} vs {x_col}"
     elif categorical_cols and numeric_cols:
-        row_count = len(rows)
-        unique_cat = df[categorical_cols[0]].nunique()
+        # 3) One category dimension + a single measure (or a measure and its share):
+        #    either a small-N COMPOSITION (pie) or — for top-N rankings and large-N —
+        #    an honest bar. Prefer the share column as the charted value when present
+        #    (it is literally the parts-of-a-whole).
+        row_count = total_rows
+        cat_col = categorical_cols[0]
+        num_col = share_cols[0] if share_cols else measure_cols[0]
+        unique_cat = df[cat_col].nunique()
 
-        # A result is "rank-like" if the numeric column is sorted descending
-        # (i.e. it came from an ORDER BY ... DESC query — typical for TOP N queries)
-        is_ranked = (
-            len(numeric_cols) > 0
-            and df[numeric_cols[0]].is_monotonic_decreasing
-        )
+        # RANKING (keep bar): a "top/most/highest N" query — ORDER BY a measure with
+        # an explicit small LIMIT. Detected from the SQL, the strongest signal.
+        is_ranking = _is_ranking(executed_sql)
 
-        # A result is "distribution-like" (pie-appropriate) only if:
-        # - It is NOT a ranked list
-        # - It has few enough categories to be readable as slices
-        # - All values are positive (negatives make no sense in a pie)
-        # - Row count is small enough to be readable
-        PIE_MAX_SLICES = settings.pie_max_slices
-
-        is_distribution = (
-            not is_ranked
-            and len(categorical_cols) > 0
-            and len(numeric_cols) > 0
+        # COMPOSITION (pie): a clean parts-of-a-whole — one non-negative value per
+        # category, few enough slices to read, and NOT a top-N ranking.
+        is_composition = (
+            not is_ranking
+            and len(categorical_cols) == 1
             and unique_cat <= PIE_MAX_SLICES
             and row_count <= PIE_MAX_SLICES
-            and df[numeric_cols[0]].min() >= 0
+            and unique_cat == row_count
+            and df[num_col].min() >= 0
         )
 
-        chart_type = "pie" if is_distribution else "bar"
-        x_col = categorical_cols[0]
-        y_col = numeric_cols[0]
-        reasoning = f"{chart_type.capitalize()}: {x_col} × {y_col} ({row_count} rows)"
-    elif len(numeric_cols) >= 2:
-        chart_type = "scatter"
-        x_col = numeric_cols[0]
-        y_col = numeric_cols[1]
-        color_col = categorical_cols[0] if categorical_cols else None
-        reasoning = f"Scatter: {x_col} × {y_col}"
+        x_col = cat_col
+        y_col = num_col
+        if is_composition:
+            chart_type = "pie"
+            reasoning = f"Pie: composition of {cat_col} by {num_col} ({row_count} parts)"
+        elif is_ranking:
+            chart_type = "bar"
+            reasoning = f"Bar: ranking by {num_col} (top {row_count})"
+        else:
+            chart_type = "bar"
+            reasoning = f"Bar: {cat_col} × {num_col} ({row_count} rows)"
 
     plotly_json = None
     if chart_type != "none":
