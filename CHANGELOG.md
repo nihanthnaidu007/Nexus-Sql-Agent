@@ -123,6 +123,5 @@ Explicitly out of scope for V1, to set expectations honestly:
 - No usage telemetry.
 - No multi-tenancy.
 
-[3.0.0]: https://github.com/<OWNER>/<REPO>/releases/tag/v3.0.0
-[2.0.0]: https://github.com/<OWNER>/<REPO>/releases/tag/v2.0.0
-[1.0.0]: https://github.com/<OWNER>/<REPO>/releases/tag/v1.0.0
+[3.0.0]: https://github.com/nihanthnaidu007/Nexus-Sql-Agent/releases/tag/v3.0.0
+[2.0.0]: https://github.com/nihanthnaidu007/Nexus-Sql-Agent/releases/tag/v2.0.0
