@@ -33,6 +33,7 @@ import { ExamplePills } from "@/components/ExamplePills";
 import { AnswerView, LiveRunView, RunningState } from "@/components/ResultView";
 import { Clarification, ConversationContext } from "@/components/Clarification";
 import { Refusal } from "@/components/Refusal";
+import { SystemStatus } from "@/components/SystemStatus";
 
 /** An in-progress / completed clarification thread for the current conversation. */
 interface Thread {
@@ -203,6 +204,11 @@ export default function Page() {
           {result.isAnswer && <AnswerView result={result} />}
         </>
       )}
+
+      {/* Phase 18 — a DISCREET, peripheral system-status footer (DB health +
+          cache/few-shot stats). Always present, quiet, never inline with a
+          result; describes the SYSTEM, not the query. */}
+      <SystemStatus />
     </main>
   );
 }
