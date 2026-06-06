@@ -111,7 +111,7 @@ note below). `/api/health`:
 
 ```json
 { "status": "ok", "db_connected": true, "anthropic_connected": true,
-  "openai_connected": true, "langsmith_tracing": true, "version": "2.0.0" }
+  "openai_connected": true, "langsmith_tracing": true, "version": "3.0.0" }
 ```
 12 graph nodes registered: parse_intent, safety_check, check_cache,
 retrieve_schema, retrieve_fewshot, generate_sql, validate_syntax, execute_query,

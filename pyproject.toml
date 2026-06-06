@@ -16,7 +16,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nixus"
-version = "2.0.0"
+version = "3.0.0"
 description = "NIXUS — grounded natural-language SQL agent"
 requires-python = ">=3.10"
 

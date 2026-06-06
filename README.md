@@ -136,7 +136,7 @@ nixus reembed                                      # re-introspect + re-embed th
 
 The benchmark of record runs a fixed, held-out **SaaS gold set** against the
 deterministic, frozen `nixus_saas` seed, scored by result-equivalence (not string
-match). The measured result, unchanged in v2 (the demo dataset is separate and does not
+match). The measured result, unchanged in v3 (the demo dataset is separate and does not
 perturb it):
 
 - **Answerable: 55 / 57 correct** — easy **13/13**, medium **15/17**, hard **27/27**.
@@ -203,7 +203,7 @@ For the full module map and the rules each layer obeys, see
 `GET /api/v1/health` (aliased at the unversioned `/api/health` for infra probes)
 reports dependency status honestly and always returns **HTTP 200** when the process is
 alive — a failed dependency changes a body field, never the status. It also reports the
-running **`version`** (`2.0.0`), which is what the UI footer surfaces.
+running **`version`** (`3.0.0`), which is what the UI footer surfaces.
 
 ```jsonc
 {
@@ -212,7 +212,7 @@ running **`version`** (`2.0.0`), which is what the UI footer surfaces.
   "anthropic_connected": true,    // a REAL cached credential probe, not just "is a key set"
   "openai_connected": true,       // a placeholder/empty key reports false, with no API call
   "langsmith_tracing": false,     // tracing is opt-in; off unless a valid LangSmith key is set
-  "version": "2.0.0"
+  "version": "3.0.0"
 }
 ```
 

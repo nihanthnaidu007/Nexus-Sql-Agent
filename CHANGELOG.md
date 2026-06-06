@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] — 2026-06-06
+## [3.0.0] — 2026-06-06
 
 The React web UI reaches full functional parity with the retired Streamlit interface,
 then improves beyond it. The trust pipeline and the honest benchmark are unchanged.
@@ -21,7 +21,7 @@ then improves beyond it. The trust pipeline and the honest benchmark are unchang
   - A **separate, rich demo dataset** (`nixus_saas_demo`) as the stack default, kept
     distinct from the frozen benchmark seed so it cannot perturb the score.
   - **Neutral (de-Chinook'd) empty states.**
-- Version bumped to **2.0.0** consistently across `pyproject.toml`,
+- Version bumped to **3.0.0** consistently across `pyproject.toml`,
   `web/package.json`, the API (`GET /api/v1/health` and the FastAPI metadata), and the
   LangSmith trace metadata. The UI footer reads the version from `/health`.
 
@@ -43,6 +43,13 @@ then improves beyond it. The trust pipeline and the honest benchmark are unchang
   strip, so the subtitle would be redundant. A conscious won't-port.
 - **`CorrectionEntry.attempt` type confirmed honest** — the backend returns an int, so
   the TS `number` type is correct as written (no coercion needed).
+
+## [2.0.0] — 2026-06-05
+
+Production-ready release. The project was declared production-ready with the React web
+UI documented alongside the API and CLI adapters on the database-agnostic, read-only
+core. This release predates the full Streamlit-parity and native-charting work
+delivered in 3.0.0.
 
 ## [1.0.0] — 2026-06-04
 
@@ -116,5 +123,6 @@ Explicitly out of scope for V1, to set expectations honestly:
 - No usage telemetry.
 - No multi-tenancy.
 
-[2.0.0]: https://keepachangelog.com/en/1.0.0/
-[1.0.0]: https://keepachangelog.com/en/1.0.0/
+[3.0.0]: https://github.com/<OWNER>/<REPO>/releases/tag/v3.0.0
+[2.0.0]: https://github.com/<OWNER>/<REPO>/releases/tag/v2.0.0
+[1.0.0]: https://github.com/<OWNER>/<REPO>/releases/tag/v1.0.0

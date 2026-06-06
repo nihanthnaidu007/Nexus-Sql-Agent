@@ -1,6 +1,6 @@
 {
   "name": "nixus-sql-web",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "NIXUS SQL React frontend (Phase 8). 8.1 = minimal integration scaffold.",
   "scripts": {

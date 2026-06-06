@@ -98,7 +98,7 @@ export interface ChartConfig {
 export interface CorrectionEntry {
   // The backend stores this as an int (nixus/graph/state.py:105 `correction_attempts:
   // int`; CorrectionRecord.attempt: int), so it arrives as a JSON number — the type is
-  // honest as written. (v2 verified: no string-vs-number mismatch to coerce.)
+  // honest as written. (v3 verified: no string-vs-number mismatch to coerce.)
   attempt: number;
   failed_sql: string;
   error_message: string;
