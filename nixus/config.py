@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     cache_similarity_threshold: float = Field(default=0.92)     # CACHE_SIMILARITY_THRESHOLD
     query_timeout_ms: int = Field(default=30000)           # QUERY_TIMEOUT_MS
     pie_max_slices: int = Field(default=6)                 # PIE_MAX_SLICES
+    # Max distinct values a SECOND categorical may have to be drawn as multi-series
+    # (one line per value, or grouped bars). Above this the split is unreadable
+    # noise, so classify_chart falls back to a single series. ~8 keeps the legend
+    # legible while still covering real splits (e.g. plan tiers).
+    multi_series_max: int = Field(default=8)               # MULTI_SERIES_MAX
 
     # ── Cache eviction (read at API startup) ────────────────────────────────
     cache_max_age_days: int = Field(default=30)            # CACHE_MAX_AGE_DAYS
